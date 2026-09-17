@@ -49,7 +49,7 @@ def live():
  drives=((d.get("drives") or {}).get("previous") or [])[-8:]
  for dr in drives:
   tm=((dr.get("team") or {}).get("abbreviation")) or "—"; desc=dr.get("description") or dr.get("displayResult") or dr.get("result") or "Drive"
-  out["drives"].append({"team":tm,"result":desc,"yards":dr.get("yards"),"time":dr.get("timeElapsed")})
+  out["drives"].append({"team":tm,"result":desc,"yards":dr.get("yards"),"time":dr.get("timeElapsed"),"start":dr.get("start"),"end":dr.get("end"),"plays":dr.get("offensivePlays") or dr.get("plays")})
  return out
 
 class H(SimpleHTTPRequestHandler):

@@ -1,19 +1,17 @@
-# SIDELINE ATLAS — Live Football Intelligence
+# GRIDIRON ATLAS — DEFINITIVE BUILD
 
-A full visual overhaul of the verified Lions at Bills dashboard.
+The permanent data rule:
+If a statistic cannot be verified from the connected live feed or the embedded verified starter/baseline dataset, display —. Never infer or fabricate it.
 
-Core principles:
-- verified starters and Week 1 baselines preserved
-- live values never fabricated
-- 3-second game refresh
-- press-box information density without sci-fi styling
+Added in the definitive build:
+- Player Performance Center with search/filter and live stat groups
+- explosive-play tracker
+- contextual milestone tracker
+- field-position/drive-map surface (only renders sourced field data)
+- factual "What Changed?" engine
+- scoring-drive cards
+- source-health panel
+- automatic postgame report mode
+- all prior Game HQ + Analytics Lab charts and tools retained
 
-New visual analysis:
-- cumulative live score graph
-- efficiency bars for yards/play and third-down rate
-- live-vs-Week-1 production bars
-- scoring timeline
-- compact live metric strip
-- existing drive tracker, QB comparison, situational football, offensive balance, defensive impact and play feed retained
-
-Matchup: Detroit Lions at Buffalo Bills, 2026 regular season Week 2.
+No betting, odds, fabricated probabilities, or unsupported stats.

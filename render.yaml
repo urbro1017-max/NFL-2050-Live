@@ -2,7 +2,5 @@ services:
   - type: web
     name: huddleintel-live
     runtime: python
-    plan: free
-    buildCommand: "echo No dependencies to install"
-    startCommand: "python server.py"
-    healthCheckPath: /api/status
+    buildCommand: echo No dependencies to install
+    startCommand: python server.py

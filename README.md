@@ -1,7 +1,24 @@
-# HuddleIntel V6
-Navigation/duplication fix:
-- Every sidebar destination now opens a real page.
-- Standings, Transactions, Injuries, Draft, Salary Cap, and News have distinct workspaces.
-- Removed repetitive Game Center cards.
-- Global search opens the Players workspace and filters the roster.
-- Existing live backend connections are retained.
+# HuddleIntel — FINAL STABLE BUILD
+
+This build fixes the empty-content failure mode.
+
+What is guaranteed to render even before kickoff / if an upstream endpoint fails:
+- Detroit and Buffalo player directory (embedded fallback snapshot)
+- Team-stat categories
+- Matchup profile categories
+- Full navigation and interactive player/team/game/news panels
+
+What fills from connected public feeds when available:
+- score, status, quarter, clock
+- play-by-play
+- team box score
+- individual player game box score
+- roster enrichment
+- schedules
+- standings
+- NFL news
+
+Important:
+- Pregame live game statistics legitimately show "—" until stats exist.
+- Public-facing upstream endpoints can change; /api/status reports source health.
+- The site never invents unavailable statistics.

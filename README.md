@@ -15,3 +15,22 @@ Added in the definitive build:
 - all prior Game HQ + Analytics Lab charts and tools retained
 
 No betting, odds, fabricated probabilities, or unsupported stats.
+
+PATCH:
+- FINAL Game Report is CSS-hidden by default.
+- It becomes visible only when the live provider status explicitly contains Final / Final OT.
+- Pregame, scheduled, delayed, halftime, and in-progress states cannot expose the postgame card.
+
+BROADCAST BUILD:
+- dedicated Broadcast Mode tab
+- one-click distraction-free full-screen broadcast layout
+- live score/clock/status strip
+- field/current-drive visualization
+- verified player leaders
+- team snapshot
+- last-five-drives panel
+- automatically generated game-story timeline for scores, turnovers, and explosive plays
+- live latest-play ticker
+- all existing analytics preserved
+
+The permanent verification rule remains unchanged: unavailable/unverified stats display —.

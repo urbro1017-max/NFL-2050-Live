@@ -1,9 +1,11 @@
-# Gridiron Nexus
+# HuddleIntel V5 — Connected
+Connected endpoints:
+- live game state / score / clock (3-second polling)
+- recent play-by-play
+- live team box score
+- live player box score when ESPN's game summary exposes it
+- Detroit/Buffalo rosters (5-minute refresh)
 
-Hosted live football intelligence dashboard. This redesign consolidates the prior 16-module interface into five distinct areas: Game Center, Teams, Players, Season, and Data.
+Season league-wide rankings remain intentionally unfilled until a stable league-wide stats/ranking endpoint is verified in the deployed environment. No values are fabricated.
 
-## Render
-Build command: `echo No dependencies to install`
-Start command: `python server.py`
-
-The live game feed uses the existing server endpoint. Season-ranking UI intentionally leaves unavailable rankings blank rather than fabricating values.
+Upload these files over the existing GitHub repository and let Render redeploy.

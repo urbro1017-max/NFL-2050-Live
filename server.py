@@ -1,173 +1,98 @@
+import json, os, time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 from pathlib import Path
-import json, time, threading, webbrowser, os, sys
 
-EVENT_ID = "401872932"
-HOST = "0.0.0.0"
-PORT = int(os.environ.get("PORT", "10000"))
-ROOT = Path(__file__).resolve().parent
-APP = ROOT / "app"
+HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000"))
+ROOT=Path(__file__).parent/"app"; GAME_ID="401872932"
+CDN=f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={GAME_ID}"
+SUMMARY=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={GAME_ID}"
+ROSTERS={"DET":"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/det/roster",
+         "BUF":"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/buf/roster"}
+cache={}
 
-GAME_URL = f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={EVENT_ID}"
-PBP_URL = f"https://cdn.espn.com/core/nfl/playbyplay?xhr=1&gameId={EVENT_ID}"
-SCORE_URL = "https://cdn.espn.com/core/nfl/scoreboard?xhr=1"
-ROSTER_URLS = {
-    "DET": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/8/roster",
-    "BUF": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/2/roster",
-}
+def fetch(url):
+    req=Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
+    with urlopen(req,timeout=10) as r:return json.loads(r.read().decode())
 
-cache={"live":None,"rosters":None,"live_at":0,"roster_at":0,"error":None}
-lock=threading.Lock()
+def cached(k,url,ttl):
+    if k not in cache or time.time()-cache[k][0]>ttl:
+        cache[k]=(time.time(),fetch(url))
+    return cache[k][1]
 
-def get_json(url, timeout=8):
-    req=Request(url,headers={"User-Agent":"Mozilla/5.0 NFL2050/1.0","Accept":"application/json"})
-    with urlopen(req,timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-def gp(data):
-    return data.get("gamepackageJSON", data) if isinstance(data,dict) else {}
-
-def team_abbr(obj):
-    if not isinstance(obj,dict): return ""
-    t=obj.get("team",obj)
-    return t.get("abbreviation") or t.get("shortDisplayName") or ""
-
-def normalize():
-    game_raw=get_json(GAME_URL)
-    pkg=gp(game_raw)
-    header=pkg.get("header",{}) or {}
-    comps=header.get("competitions",[]) or []
-    comp=comps[0] if comps else {}
-    competitors=comp.get("competitors",[]) or []
-    scores={}
+def live():
+    raw=cached("cdn",CDN,2); pkg=raw.get("gamepackageJSON",raw)
+    # Summary often has richer player/team boxscore; if unavailable, CDN still powers game state.
+    try: summary=cached("summary",SUMMARY,3)
+    except: summary={}
+    header=(summary or pkg).get("header",{})
+    comp=((header.get("competitions") or [{}])[0]); competitors=comp.get("competitors") or []
+    out={"game":{},"plays":[],"team_stats":{},"players":[]}
     for c in competitors:
-        ab=team_abbr(c)
-        if ab:
-            sc=c.get("score",0)
-            if isinstance(sc,dict): sc=sc.get("displayValue",sc.get("value",0))
-            scores[ab]=sc
-
-    status=comp.get("status",{}) or header.get("status",{}) or {}
-    stype=status.get("type",{}) if isinstance(status,dict) else {}
-    game={
-      "detScore":scores.get("DET",0),
-      "bufScore":scores.get("BUF",0),
-      "period":status.get("period") or comp.get("period"),
-      "clock":status.get("displayClock") or comp.get("displayClock"),
-      "status":stype.get("shortDetail") or stype.get("detail") or stype.get("description") or "Pregame"
-    }
-
-    team_stats={"DET":[],"BUF":[]}
-    box=pkg.get("boxscore",{}) or {}
-    for t in box.get("teams",[]) or []:
-        ab=team_abbr(t)
-        if ab in team_stats:
-            stats=[]
-            for s in t.get("statistics",[]) or []:
-                stats.append({
-                    "name":s.get("name",""),
-                    "label":s.get("label") or s.get("displayName") or s.get("name",""),
-                    "value":s.get("value"),
-                    "displayValue":s.get("displayValue")
-                })
-            team_stats[ab]=stats
-
-    plays=[]
-    # Try game package first.
-    for source in (pkg.get("plays"), (pkg.get("drives") or {}).get("previous")):
-        if isinstance(source,list):
-            for p in source:
-                if not isinstance(p,dict): continue
-                if "plays" in p and isinstance(p["plays"],list):
-                    for q in p["plays"]:
-                        plays.append({"text":q.get("text",""),"clock":(q.get("clock") or {}).get("displayValue","") if isinstance(q.get("clock"),dict) else q.get("clock","")})
-                else:
-                    plays.append({"text":p.get("text",""),"clock":(p.get("clock") or {}).get("displayValue","") if isinstance(p.get("clock"),dict) else p.get("clock","")})
+        ab=((c.get("team") or {}).get("abbreviation") or "").upper()
+        if ab in ("DET","BUF"):
+            out["game"][ab.lower()+"Score"]=c.get("score",0)
+            out["game"][ab.lower()+"Record"]=(((c.get("records") or [{}])[0]).get("summary"))
+    status=comp.get("status") or {}; typ=status.get("type") or {}
+    out["game"].update(status=typ.get("shortDetail") or typ.get("description") or typ.get("state"),
+                       clock=status.get("displayClock"),period=status.get("period"))
+    # Team box score
+    teams=((summary.get("boxscore") or {}).get("teams") or [])
+    by={}
+    for t in teams:
+        ab=((t.get("team") or {}).get("abbreviation") or "").upper()
+        by[ab]={s.get("label") or s.get("name"):s.get("displayValue") for s in t.get("statistics") or []}
+    labels=["Total Yards","Passing Yards","Rushing Yards","1st Downs","3rd Down Efficiency","Possession Time"]
+    for lab in labels: out["team_stats"][lab]=[by.get("DET",{}).get(lab,"—"),by.get("BUF",{}).get(lab,"—")]
+    # Player box score
+    for grp in ((summary.get("boxscore") or {}).get("players") or []):
+        ab=((grp.get("team") or {}).get("abbreviation") or "").upper()
+        for cat in grp.get("statistics") or []:
+            cname=cat.get("name") or cat.get("type") or cat.get("label")
+            labels2=cat.get("labels") or []
+            for a in cat.get("athletes") or []:
+                ath=a.get("athlete") or {}
+                vals=a.get("stats") or []
+                out["players"].append({"team":ab,"name":ath.get("displayName"),"id":ath.get("id"),
+                    "category":cname,"stats":dict(zip(labels2,vals))})
+    # Plays
+    plays=summary.get("plays") or []
     if not plays:
-        try:
-            pbp=gp(get_json(PBP_URL))
-            arr=pbp.get("plays",[]) if isinstance(pbp,dict) else []
-            for p in arr:
-                plays.append({"text":p.get("text",""),"clock":(p.get("clock") or {}).get("displayValue","") if isinstance(p.get("clock"),dict) else p.get("clock","")})
-        except Exception:
-            pass
-
-    return {"game":game,"teamStats":team_stats,"plays":plays[-30:],"source":"ESPN CDN","eventId":EVENT_ID,"fetchedAt":time.time()}
-
-def normalize_roster(team, raw):
-    athletes=[]
-    # Site API roster usually has groups with athletes.
-    groups=raw.get("athletes",[]) if isinstance(raw,dict) else []
-    for g in groups:
-        items=g.get("items",[]) if isinstance(g,dict) else []
-        for a in items:
-            athletes.append({
-              "team":team,"id":a.get("id"),"name":a.get("displayName") or a.get("fullName"),
-              "number":a.get("jersey"),"position":(a.get("position") or {}).get("abbreviation"),
-              "active":a.get("active",True)
-            })
-    return athletes
-
-def rosters():
-    out=[]
-    for team,url in ROSTER_URLS.items():
-        out.extend(normalize_roster(team,get_json(url)))
+        drives=pkg.get("drives") or {}; cur=drives.get("current"); prev=drives.get("previous") or []
+        for d in ([cur] if cur else [])+prev[-4:]:
+            for p in (d or {}).get("plays") or []: plays.append(p)
+    for p in plays[-15:]:
+        out["plays"].append({"clock":((p.get("clock") or {}).get("displayValue")),"text":p.get("text")})
     return out
 
-class Handler(SimpleHTTPRequestHandler):
-    def translate_path(self,path):
-        clean=urlparse(path).path
-        if clean.startswith("/api/"): return str(APP/"__none__")
-        rel=clean.lstrip("/") or "index.html"
-        return str(APP/rel)
-    def do_GET(self):
-        path=urlparse(self.path).path
-        if path=="/api/live":
-            try:
-                with lock:
-                    now=time.time()
-                    if cache["live"] is None or now-cache["live_at"]>=2.5:
-                        cache["live"]=normalize(); cache["live_at"]=now; cache["error"]=None
-                    data=cache["live"]
-                self.send_json(data)
-            except Exception as e:
-                with lock: cache["error"]=str(e); old=cache["live"]
-                if old:
-                    old=dict(old); old["stale"]=True; old["error"]=str(e); self.send_json(old)
-                else:
-                    self.send_json({"game":{"status":"DATA LINK RETRYING"},"teamStats":{"DET":[],"BUF":[]},"plays":[],"error":str(e)},503)
-            return
-        if path=="/api/rosters":
-            try:
-                with lock:
-                    now=time.time()
-                    if cache["rosters"] is None or now-cache["roster_at"]>=300:
-                        cache["rosters"]=rosters(); cache["roster_at"]=now
-                    data=cache["rosters"]
-                self.send_json({"players":data,"fetchedAt":cache["roster_at"]})
-            except Exception as e: self.send_json({"players":[],"error":str(e)},503)
-            return
-        if path=="/api/status":
-            self.send_json({"eventId":EVENT_ID,"liveCached":cache["live"] is not None,"rosterCached":cache["rosters"] is not None,"error":cache["error"]})
-            return
-        super().do_GET()
-    def send_json(self,obj,status=200):
-        b=json.dumps(obj).encode()
-        self.send_response(status); self.send_header("Content-Type","application/json"); self.send_header("Cache-Control","no-store"); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b)
-    def log_message(self,fmt,*args): pass
+def roster():
+    out=[]
+    for ab,url in ROSTERS.items():
+        try:
+            data=cached("roster"+ab,url,300)
+            # site roster schema groups athletes under athletes[] entries
+            groups=data.get("athletes") or []
+            for g in groups:
+                pos=g.get("position") or ""
+                for a in g.get("items") or []:
+                    out.append({"team":ab,"name":a.get("fullName") or a.get("displayName"),
+                                "id":a.get("id"),"pos":((a.get("position") or {}).get("abbreviation") or pos)})
+        except: pass
+    return out
 
-if __name__=="__main__":
-    os.chdir(APP)
-    server=ThreadingHTTPServer((HOST,PORT),Handler)
-    url=f"http://{HOST}:{PORT}"
-    print("="*58)
-    print(" NFL 2050 LIVE ENGINE")
-    print(f" Game: DET @ BUF | ESPN Event {EVENT_ID}")
-    print(f" App:  {url}")
-    print(" Hosted NFL 2050 service is running.")
-    print(" Press Ctrl+C to stop.")
-    print("="*58)
-    try: server.serve_forever()
-    except KeyboardInterrupt: pass
+class H(SimpleHTTPRequestHandler):
+    def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
+    def js(self,o,s=200):
+        b=json.dumps(o).encode();self.send_response(s);self.send_header("Content-Type","application/json")
+        self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+    def do_GET(self):
+        p=urlparse(self.path).path
+        if p=="/api/status":return self.js({"ok":True,"gameId":GAME_ID,"connected":["live game","team boxscore","player boxscore","rosters"]})
+        if p=="/api/live":
+            try:return self.js(live())
+            except Exception as e:return self.js({"error":"upstream unavailable","detail":str(e)},502)
+        if p=="/api/rosters":return self.js({"players":roster()})
+        if p=="/":self.path="/index.html"
+        return super().do_GET()
+if __name__=="__main__":ThreadingHTTPServer((HOST,PORT),H).serve_forever()

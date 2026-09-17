@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: nfl-2050-live
+    name: huddleintel-live
     runtime: python
     plan: free
     buildCommand: "echo No dependencies to install"

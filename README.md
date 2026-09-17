@@ -1,80 +1,38 @@
-# GRIDIRON ATLAS — DEFINITIVE BUILD
+# GRIDIRON ATLAS 3.0 — Football Intelligence Platform
 
-The permanent data rule:
-If a statistic cannot be verified from the connected live feed or the embedded verified starter/baseline dataset, display —. Never infer or fabricate it.
+Render-ready NFL analytics platform.
 
-Added in the definitive build:
-- Player Performance Center with search/filter and live stat groups
-- explosive-play tracker
-- contextual milestone tracker
-- field-position/drive-map surface (only renders sourced field data)
-- factual "What Changed?" engine
-- scoring-drive cards
-- source-health panel
-- automatic postgame report mode
-- all prior Game HQ + Analytics Lab charts and tools retained
+## External architecture now included
+- ESPN public game/scoreboard provider adapter.
+- Automatic collector thread (default 30 seconds) for active/final games.
+- PostgreSQL support through `DATABASE_URL` using psycopg.
+- Automatic SQLite fallback for local use.
+- Persistent game, player-stat and snapshot archive when PostgreSQL is connected.
+- Provider/data-health diagnostics.
+- Generic player and team indexes generated from archived games.
+- CSV game export.
+- PWA/offline shell retained.
 
-No betting, odds, fabricated probabilities, or unsupported stats.
+## Football intelligence modules
+All previous Game HQ, Broadcast, MAX Lab, Analytics Lab, Player Center, Season HQ, situational labs, comparison, themes and TV mode remain.
 
-PATCH:
-- FINAL Game Report is CSS-hidden by default.
-- It becomes visible only when the live provider status explicitly contains Final / Final OT.
-- Pregame, scheduled, delayed, halftime, and in-progress states cannot expose the postgame card.
+3.0 additionally adds:
+- Replay Center with speed controls and field movement.
+- Scouting Notebook with user-authored player grades/notes.
+- Film notebook/tags.
+- Front Office Mode.
+- Archived player database and position rooms.
+- Archived team database.
+- External-module slots for cap, depth/availability, personnel/formation and draft data.
 
-BROADCAST BUILD:
-- dedicated Broadcast Mode tab
-- one-click distraction-free full-screen broadcast layout
-- live score/clock/status strip
-- field/current-drive visualization
-- verified player leaders
-- team snapshot
-- last-five-drives panel
-- automatically generated game-story timeline for scores, turnovers, and explosive plays
-- live latest-play ticker
-- all existing analytics preserved
+## Data integrity
+Provider facts are displayed as sourced data. User scouting grades are explicitly user-authored. Missing external data stays `—`; it is never generated.
 
-The permanent verification rule remains unchanged: unavailable/unverified stats display —.
+## PostgreSQL
+The app checks `DATABASE_URL`. If it is present and reachable it uses PostgreSQL; otherwise it falls back to SQLite.
 
-MAX BUILD:
-- QB Command Center
-- Skill Player Usage Center
-- Trenches Center
-- Defensive Leaderboard
-- full Drive Efficiency table
-- rolling drive-yard graph
-- quarter splits
-- browser-persistent pinned player panel
-- global "/" command palette for pages and players
-- all previous Broadcast, Game HQ, Analytics Lab, Players and Postgame functionality retained
+On Render, connect a Render Postgres database and provide its internal database URL as `DATABASE_URL`. Never commit database credentials to GitHub.
 
-Verification rule remains absolute: no source = —.
-
-GRIDIRON ATLAS 1.0:
-- NFL Scoreboard / universal game selector
-- automatic event-ID discovery from the public scoreboard feed
-- generic game dashboard for any game returned by that feed
-- dynamic team names, logos, scores, stats, drives, player box score and play feed
-- server-session snapshot history for verified score/yard changes
-- source inspector and explicit unavailable-state handling
-- original DET/BUF deep-dive suite retained as the flagship game lab
-- no guessed statistics: unavailable = —
-
-GRIDIRON ATLAS 2.0 MAXIMUM:
-- persistent SQLite game archive + verified snapshots
-- Season HQ / archive / watchlist / game comparison
-- player watchlist persistence
-- situational Red Zone, 3rd/4th Down, Explosive Play, Turnover labs
-- play-by-play field playback controls
-- universal team/player/game pages through game selector
-- CSV export endpoint: /api/export.csv?id=GAME_ID
-- print-to-PDF compatible reports via browser print
-- source/provenance inspector and connection diagnostics
-- keyboard shortcuts: G Game HQ, B Broadcast, P Players, S Scoreboard, / command bar
-- Atlas, Broadcast Black and Scouting Light themes
-- TV presentation mode
-- PWA manifest + offline shell service worker
-- archived games remain in SQLite across ordinary app restarts when persistent storage is available
-- existing Broadcast, MAX Lab, Analytics Lab, Players, Game HQ and DET/BUF flagship retained
-
-IMPORTANT HOSTING NOTE:
-Render's filesystem may be ephemeral depending on service/storage configuration. For truly permanent cloud history across redeploys, point GRIDIRON_DB at persistent storage or migrate the same schema to a managed database.
+## Hosting
+Build: `pip install -r requirements.txt`
+Start: `python server.py`

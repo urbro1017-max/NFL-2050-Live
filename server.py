@@ -88,6 +88,92 @@ def game_data():
     out["plays"]=[{"clock":((p.get("clock") or {}).get("displayValue")),"text":p.get("text")} for p in plays[-18:]]
     return out
 
+def odds_data():
+    """Win probability + betting lines for the tracked game. ESPN's summary
+    payload carries these under 'predictor' (pregame model) and 'pickcenter'
+    (market lines) — best-effort parse; returns {} if the game/feed isn't
+    available yet rather than guessing at values."""
+    gid=current_game_id()
+    if not gid: return {}
+    summ=safe("summary",3,url=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}")
+    out={}
+    try:
+        pred=summ.get("predictor") or {}
+        if pred:
+            out["homeWinPct"]=(pred.get("homeTeam") or {}).get("gameProjection")
+            out["awayWinPct"]=(pred.get("awayTeam") or {}).get("gameProjection")
+    except Exception: pass
+    try:
+        pc=(summ.get("pickcenter") or [])
+        if pc:
+            p=pc[0]
+            out["spread"]=p.get("details")
+            out["overUnder"]=p.get("overUnder")
+            out["provider"]=(p.get("provider") or {}).get("name")
+            out["awayMoneyline"]=(p.get("awayTeamOdds") or {}).get("moneyLine")
+            out["homeMoneyline"]=(p.get("homeTeamOdds") or {}).get("moneyLine")
+    except Exception: pass
+    return out
+
+def scoreval(c):
+    s=c.get("score")
+    if isinstance(s,dict): return s.get("value") or s.get("displayValue")
+    return s
+
+def head_to_head():
+    """Recent DET-vs-BUF meetings, pulled from DET's schedule across the last
+    several seasons. Only returns games ESPN marks completed."""
+    out=[]
+    for yr in range(YEAR-6,YEAR+1):
+        d=safe(f"det_sched_{yr}",86400,url=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/det/schedule?season={yr}")
+        for e in d.get("events") or []:
+            comp=(e.get("competitions") or [{}])[0]; cs=comp.get("competitors") or []
+            det_s=buf_s=None; is_h2h=False
+            for c in cs:
+                ab=((c.get("team") or {}).get("abbreviation") or "").upper()
+                if ab=="BUF": is_h2h=True; buf_s=scoreval(c)
+                if ab=="DET": det_s=scoreval(c)
+            st=(comp.get("status") or {}).get("type") or {}
+            if is_h2h and st.get("completed"):
+                winner=None
+                try:
+                    if float(det_s)>float(buf_s): winner="DET"
+                    elif float(buf_s)>float(det_s): winner="BUF"
+                except Exception: pass
+                out.append({"date":e.get("date"),"season":yr,"detScore":det_s,"bufScore":buf_s,"winner":winner})
+    out.sort(key=lambda x:x.get("date") or "",reverse=True)
+    return out
+
+def player_detail(pid):
+    """Bio + season stats for one player. Best-effort against ESPN's
+    undocumented athlete endpoints: if the shape doesn't match, sections
+    just come back empty rather than raising, consistent with the rest of
+    this app never inventing data it doesn't have."""
+    bio={}
+    try:
+        d=safe(f"athlete_{pid}",3600,url=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{pid}")
+        a=d.get("athlete") or d
+        bp=a.get("birthPlace") or {}
+        bio={"name":a.get("displayName"),"jersey":a.get("jersey"),
+             "position":(a.get("position") or {}).get("abbreviation"),
+             "height":a.get("displayHeight"),"weight":a.get("displayWeight"),
+             "age":a.get("age"),"experience":((a.get("experience") or {}).get("years")),
+             "college":(a.get("college") or {}).get("name"),
+             "birthPlace":", ".join([x for x in [bp.get("city"),bp.get("state")] if x]),
+             "headshot":(a.get("headshot") or {}).get("href") or f"https://a.espncdn.com/i/headshots/nfl/players/full/{pid}.png"}
+    except Exception: pass
+    stats=[]
+    try:
+        d2=safe(f"athlete_stats_{pid}",3600,url=f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{pid}/stats")
+        cats=d2.get("categories") or (d2.get("splits") or {}).get("categories") or []
+        for cat in cats:
+            names=cat.get("names") or cat.get("labels") or []
+            vals=(cat.get("statistics") or [{}])[0].get("stats") if cat.get("statistics") else cat.get("stats")
+            if isinstance(vals,list) and names:
+                stats.append({"name":cat.get("displayName") or cat.get("name"),"stats":dict(zip(names,vals))})
+    except Exception: pass
+    return {"bio":bio,"seasonStats":stats}
+
 def roster():
     out=[]
     for ab,k in [("DET","det_roster"),("BUF","buf_roster")]:
@@ -96,8 +182,10 @@ def roster():
             gp=g.get("position") if isinstance(g.get("position"),str) else ""
             for a in g.get("items") or []:
                 pos=(a.get("position") or {}).get("abbreviation") or gp or "—"
-                out.append({"team":ab,"name":a.get("fullName") or a.get("displayName"),"id":a.get("id"),"pos":pos,
-                            "jersey":a.get("jersey"),"age":a.get("age"),"experience":((a.get("experience") or {}).get("years"))})
+                pid=a.get("id")
+                out.append({"team":ab,"name":a.get("fullName") or a.get("displayName"),"id":pid,"pos":pos,
+                            "jersey":a.get("jersey"),"age":a.get("age"),"experience":((a.get("experience") or {}).get("years")),
+                            "headshot":f"https://a.espncdn.com/i/headshots/nfl/players/full/{pid}.png" if pid else None})
     return out
 
 def standings():
@@ -109,7 +197,8 @@ def standings():
                     team=e.get("team") or {}; stats={x.get("name"):x.get("displayValue") for x in e.get("stats") or []}
                     rows.append({"team":team.get("displayName"),"abbr":team.get("abbreviation"),"logo":team.get("logos",[{}])[0].get("href") if team.get("logos") else None,
                                  "wins":stats.get("wins"),"losses":stats.get("losses"),"ties":stats.get("ties"),"pct":stats.get("winPercent"),
-                                 "pf":stats.get("pointsFor"),"pa":stats.get("pointsAgainst"),"streak":stats.get("streak")})
+                                 "pf":stats.get("pointsFor"),"pa":stats.get("pointsAgainst"),"streak":stats.get("streak"),
+                                 "stats":stats})
             for v in node.values(): walk(v)
         elif isinstance(node,list):
             for v in node:walk(v)
@@ -155,6 +244,11 @@ class H(SimpleHTTPRequestHandler):
             if p=="/api/standings":return self.js({"standings":standings()})
             if p=="/api/schedules":return self.js(schedules())
             if p=="/api/news":return self.js({"articles":news()})
+            if p=="/api/odds":return self.js(odds_data())
+            if p=="/api/h2h":return self.js({"games":head_to_head()})
+            if p.startswith("/api/player/"):
+                pid=p.rsplit("/",1)[-1]
+                if pid: return self.js(player_detail(pid))
         except Exception as e:return self.js({"error":str(e)},502)
         # SPA fallback: any non-file, non-api path (e.g. /matchup, /players,
         # a bookmark or a page refresh on a tab) serves index.html instead of

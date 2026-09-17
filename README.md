@@ -48,3 +48,13 @@ MAX BUILD:
 - all previous Broadcast, Game HQ, Analytics Lab, Players and Postgame functionality retained
 
 Verification rule remains absolute: no source = —.
+
+GRIDIRON ATLAS 1.0:
+- NFL Scoreboard / universal game selector
+- automatic event-ID discovery from the public scoreboard feed
+- generic game dashboard for any game returned by that feed
+- dynamic team names, logos, scores, stats, drives, player box score and play feed
+- server-session snapshot history for verified score/yard changes
+- source inspector and explicit unavailable-state handling
+- original DET/BUF deep-dive suite retained as the flagship game lab
+- no guessed statistics: unavailable = —

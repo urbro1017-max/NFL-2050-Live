@@ -95,6 +95,14 @@ def _event_id_from_ref(item):
     v=item.get("id")
     return str(v) if v is not None else None
 
+def _team_logo(team):
+    """Return a verified ESPN logo URL when the package omits the logo field."""
+    if not isinstance(team,dict): return None
+    logo=team.get("logo")
+    if logo: return logo
+    ab=(team.get("abbreviation") or "").strip().lower()
+    return f"https://a.espncdn.com/i/teamlogos/nfl/500/{ab}.png" if ab else None
+
 def _game_summary_from_package(gid):
     """Build a scoreboard row from the same CDN package used by Game HQ."""
     raw=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_CDN_GAME_DISCOVERY")
@@ -107,7 +115,7 @@ def _game_summary_from_package(gid):
             "side":c.get("homeAway"),
             "abbr":t.get("abbreviation"),
             "name":t.get("displayName") or t.get("shortDisplayName"),
-            "logo":t.get("logo"),
+            "logo":_team_logo(t),
             "score":c.get("score","0")
         })
     st=comp.get("status") or {}; typ=st.get("type") or {}
@@ -166,7 +174,7 @@ def game(gid,save=True):
     comp=((d.get("header") or {}).get("competitions") or [{}])[0];teams=[];lines={}
     for c in comp.get("competitors") or []:
         t=c.get("team") or {};ab=(t.get("abbreviation") or "").upper();lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
-        teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":t.get("logo"),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
+        teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
     st=comp.get("status") or {};typ=st.get("type") or {}
     out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":lines,"source":PROVIDER,"fetched_at":int(time.time())}
     for t in ((d.get("boxscore") or {}).get("teams") or []):
@@ -179,7 +187,11 @@ def game(gid,save=True):
                 a=row.get("athlete") or {};out["players"].append({"id":a.get("id"),"team":ab,"name":a.get("displayName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,row.get("stats") or []))})
     for p in (d.get("plays") or [])[-180:]:
         out["plays"].append({"id":p.get("id"),"clock":(p.get("clock") or {}).get("displayValue"),"period":(p.get("period") or {}).get("number"),"text":p.get("text"),"team":((p.get("team") or {}).get("abbreviation")),"start":p.get("start"),"end":p.get("end"),"type":((p.get("type") or {}).get("text"))})
-    for x in ((d.get("drives") or {}).get("previous") or []):
+    drive_block=d.get("drives") or {}
+    drive_rows=list(drive_block.get("previous") or [])
+    current=drive_block.get("current")
+    if isinstance(current,dict) and current.get("id") not in {x.get("id") for x in drive_rows}: drive_rows.append(current)
+    for x in drive_rows:
         out["drives"].append({"id":x.get("id"),"team":((x.get("team") or {}).get("abbreviation")) or "—","result":x.get("description") or x.get("displayResult") or x.get("result") or "Drive","yards":x.get("yards"),"time":x.get("timeElapsed"),"start":x.get("start"),"end":x.get("end"),"plays":x.get("offensivePlays") or x.get("plays")})
     if save:STORE.save(out)
     return out
@@ -214,7 +226,7 @@ def team_index():
     for gm in STORE.games():
         g=STORE.game(gm["id"]) or {}
         for t in g.get("teams",[]):
-            ab=t.get("abbr");out.setdefault(ab,{"abbr":ab,"name":t.get("name"),"logo":t.get("logo"),"games":[]});out[ab]["games"].append({"game_id":g["id"],"status":g.get("status"),"score":t.get("score"),"team_stats":g.get("team_stats",{}).get(ab,{})})
+            ab=t.get("abbr");out.setdefault(ab,{"abbr":ab,"name":t.get("name"),"logo":_team_logo(t),"games":[]});out[ab]["games"].append({"game_id":g["id"],"status":g.get("status"),"score":t.get("score"),"team_stats":g.get("team_stats",{}).get(ab,{})})
     return list(out.values())
 
 def legacy_live():

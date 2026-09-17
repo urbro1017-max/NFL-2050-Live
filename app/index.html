@@ -256,7 +256,7 @@ body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{
 
 
 <section id="league" class="page">
- <div class="sectionlabel">GRIDIRON ATLAS 1.0 · Universal NFL Game Center</div>
+ <div class="sectionlabel">GRIDIRON ATLAS 3.3 · Universal NFL Game Center</div>
  <div class="card"><h2>NFL SCOREBOARD / GAME SELECTOR</h2><div class="body"><p class="note">Choose a game. GRIDIRON ATLAS will build a source-aware universal dashboard from the connected public game feed.</p><div id="leagueGames" class="gamePicker"><p class="note">Loading NFL games…</p></div></div></div>
  <div id="universalHQ" style="display:none">
   <div class="uScore" style="margin-top:14px"><div class="uTeam"><img id="uAwayLogo"><small id="uAwayName">AWAY</small><b id="uAwayScore">0</b></div><div class="uMiddle"><b id="uStatus">—</b><strong id="uClock">—</strong><small id="uSource">—</small></div><div class="uTeam"><b id="uHomeScore">0</b><small id="uHomeName">HOME</small><img id="uHomeLogo"></div></div>
@@ -276,7 +276,7 @@ body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{
 
 <section id="seasonhq" class="page">
  <div class="sectionlabel">GRIDIRON ATLAS 2.0 · Persistent Football Workspace</div>
- <div class="insightgrid"><div class="insight"><small>Archive</small><b id="archiveCount">0 Games</b><p class="note">Completed/visited games stored in SQLite</p></div><div class="insight"><small>Watchlist</small><b id="watchCount">0 Players</b><p class="note">Saved in your browser</p></div><div class="insight"><small>Compare</small><b>Game ↔ Game</b><p class="note">Choose two archived games below</p></div><div class="insight"><small>Exports</small><b>CSV / Print-PDF</b><p class="note">Portable game reports</p></div></div>
+ <div class="insightgrid"><div class="insight"><small>Archive</small><b id="archiveCount">0 Games</b><p class="note">Completed/visited games stored in the connected database</p></div><div class="insight"><small>Watchlist</small><b id="watchCount">0 Players</b><p class="note">Saved in your browser</p></div><div class="insight"><small>Compare</small><b>Game ↔ Game</b><p class="note">Choose two archived games below</p></div><div class="insight"><small>Exports</small><b>CSV / Print-PDF</b><p class="note">Portable game reports</p></div></div>
  <div class="chartgrid"><div class="card"><h2>GAME ARCHIVE</h2><div class="body" id="archiveGames"><p class="note">Loading archive…</p></div></div><div class="card"><h2>WATCHLIST</h2><div class="body" id="globalWatch"><p class="note">Pin players from Players/MAX Lab.</p></div></div></div>
  <div class="card" style="margin-top:14px"><h2>GAME COMPARISON</h2><div class="body"><div class="toolbar"><select id="cmpA"></select><select id="cmpB"></select><button id="compareBtn">COMPARE</button></div><div id="compareOut"></div></div></div>
 </section>
@@ -338,21 +338,24 @@ let universalGame=null;
 async function loadLeague(){
  try{
   let r=await fetch("/api/games",{cache:"no-store"}),d=await r.json();
-  leagueGames.innerHTML=d.games?.length?d.games.map(g=>{let a=g.teams.find(x=>x.side==="away")||g.teams[0]||{},h=g.teams.find(x=>x.side==="home")||g.teams[1]||{};return `<div class="gamePick" data-gid="${g.id}"><div class="teams"><span><img src="${a.logo||""}"> ${a.abbr||"—"} ${a.score||0}</span><span>${h.score||0} ${h.abbr||"—"} <img src="${h.logo||""}"></span></div><small>${g.status||"Scheduled"}</small></div>`}).join(""):'<p class="note">No games returned by the current scoreboard feed.</p>';
+  leagueGames.innerHTML=d.games?.length?d.games.map(g=>{let a=g.teams.find(x=>x.side==="away")||g.teams[0]||{},h=g.teams.find(x=>x.side==="home")||g.teams[1]||{};return `<div class="gamePick" data-gid="${g.id}"><div class="teams"><span><img src="${nflLogo(a)}" onerror="this.style.visibility='hidden'"> ${a.abbr||"—"} ${a.score||0}</span><span>${h.score||0} ${h.abbr||"—"} <img src="${nflLogo(h)}" onerror="this.style.visibility='hidden'"></span></div><small>${g.status||"Scheduled"}</small></div>`}).join(""):'<p class="note">No games returned by the current scoreboard feed.</p>';
   document.querySelectorAll(".gamePick").forEach(x=>x.onclick=()=>loadUniversal(x.dataset.gid));
  }catch(e){leagueGames.innerHTML='<p class="note">Scoreboard feed unavailable right now.</p>'}
 }
-function genericStat(stats,keys){for(let k of Object.keys(stats||{}))if(keys.some(x=>k.toLowerCase().includes(x)))return stats[k];return "—"}
+function normStatKey(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]/g,"")}
+function exactStat(stats,aliases){let src=stats||{}, map={};Object.keys(src).forEach(k=>map[normStatKey(k)]=src[k]);for(let a of aliases){let key=normStatKey(a);if(Object.prototype.hasOwnProperty.call(map,key))return map[key]}return "—"}
+function nflLogo(team){let ab=String(team?.abbr||"").toLowerCase();return team?.logo||(ab?`https://a.espncdn.com/i/teamlogos/nfl/500/${ab}.png`:"")}
+function safeLogo(img,team){img.onerror=()=>{img.style.visibility="hidden"};img.style.visibility="visible";img.src=nflLogo(team)||""}
 async function loadUniversal(id){
  try{
   let r=await fetch("/api/game?id="+encodeURIComponent(id),{cache:"no-store"}),d=await r.json();universalGame=d;
   universalHQ.style.display="block";let a=d.teams.find(x=>x.side==="away")||d.teams[0]||{},h=d.teams.find(x=>x.side==="home")||d.teams[1]||{};
-  uAwayLogo.src=a.logo||"";uHomeLogo.src=h.logo||"";uAwayName.textContent=a.name||a.abbr||"AWAY";uHomeName.textContent=h.name||h.abbr||"HOME";uAwayScore.textContent=a.score??0;uHomeScore.textContent=h.score??0;uStatus.textContent=d.status||"—";uClock.textContent=d.clock||"—";uSource.textContent=d.source||"—";uInspector.textContent=`${d.source||"Unavailable"} · fetched ${d.fetched_at?new Date(d.fetched_at*1000).toLocaleTimeString():"—"}`;
-  let metrics=[["Total Yards",["total","yard"]],["Passing Yards",["pass","yard"]],["Rushing Yards",["rush","yard"]],["First Downs",["first","down"]],["Turnovers",["turnover"]],["Sacks",["sack"]]];
-  uStats.innerHTML=metrics.map(([label,keys])=>`<div class="drive"><b>${label}</b><span>${a.abbr||"AWAY"} ${genericStat(d.team_stats[a.abbr],keys)}</span><small>${h.abbr||"HOME"} ${genericStat(d.team_stats[h.abbr],keys)}</small></div>`).join("");
-  uDrives.innerHTML=d.drives?.length?d.drives.slice(-8).reverse().map(x=>`<div class="drive"><b>${x.team}</b><span>${x.result}</span><small>${x.yards!=null?x.yards+" yds":"—"}</small></div>`).join(""):'<p class="note">—</p>';
+  safeLogo(uAwayLogo,a);safeLogo(uHomeLogo,h);uAwayName.textContent=a.name||a.abbr||"AWAY";uHomeName.textContent=h.name||h.abbr||"HOME";uAwayScore.textContent=a.score??0;uHomeScore.textContent=h.score??0;uStatus.textContent=d.status||"—";uClock.textContent=d.clock||"—";uSource.textContent=d.source||"—";uInspector.textContent=`${d.source||"Unavailable"} · fetched ${d.fetched_at?new Date(d.fetched_at*1000).toLocaleTimeString():"—"}`;
+  let metrics=[["Total Yards",["Total Yards","totalYards"]],["Passing Yards",["Yards Passing","Passing Yards","netPassingYards","passingYards"]],["Rushing Yards",["Yards Rushing","Rushing Yards","rushingYards"]],["First Downs",["First Downs","firstDowns"]],["Turnovers",["Turnovers","turnovers"]],["Sacks",["Sacks","Sacks-Yards","sacks"]]];
+  uStats.innerHTML=metrics.map(([label,aliases])=>`<div class="drive"><b>${label}</b><span>${a.abbr||"AWAY"} ${exactStat(d.team_stats?.[a.abbr],aliases)}</span><small>${h.abbr||"HOME"} ${exactStat(d.team_stats?.[h.abbr],aliases)}</small></div>`).join("");
+  uDrives.innerHTML=d.drives?.length?d.drives.slice(-8).reverse().map(x=>`<div class="drive"><b>${x.team}</b><span>${x.result}</span><small>${x.yards!=null?x.yards+" yds":"—"}</small></div>`).join(""):'<p class="note">No drive data available from the connected feed yet.</p>';
   renderUniversalPlayers("");
-  uPlays.innerHTML=d.plays?.length?d.plays.slice(-16).reverse().map(x=>`<div class="drive"><b>${x.period?"Q"+x.period:"—"} ${x.clock||""}</b><span>${x.text||"—"}</span><small>${x.team||""}</small></div>`).join(""):'<p class="note">—</p>';
+  uPlays.innerHTML=d.plays?.length?d.plays.slice(-16).reverse().map(x=>`<div class="drive"><b>${x.period?"Q"+x.period:"—"} ${x.clock||""}</b><span>${x.text||"—"}</span><small>${x.team||""}</small></div>`).join(""):'<p class="note">No play-by-play available from the connected feed yet.</p>';
   renderSituational();provLog.innerHTML=`<span class="prov">PUBLIC GAME FEED</span><span class="prov">${d.fetched_at?new Date(d.fetched_at*1000).toLocaleTimeString():"—"}</span>`;let hr=await fetch("/api/history?id="+encodeURIComponent(id),{cache:"no-store"}),hd=await hr.json();uHistory.innerHTML=hd.snapshots?.length?hd.snapshots.slice(-12).map(x=>`<span class="sourceBadge">${new Date(x.t*1000).toLocaleTimeString()} · ${Object.entries(x.scores||{}).map(([k,v])=>k+" "+v).join(" / ")}</span>`).join(" "):'<span class="sourceBadge">Snapshot starts after first successful refresh</span>';
  }catch(e){universalHQ.style.display="block";uInspector.textContent="Game feed unavailable";uStats.innerHTML='<p class="note">—</p>'}
 }

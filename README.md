@@ -34,3 +34,17 @@ BROADCAST BUILD:
 - all existing analytics preserved
 
 The permanent verification rule remains unchanged: unavailable/unverified stats display —.
+
+MAX BUILD:
+- QB Command Center
+- Skill Player Usage Center
+- Trenches Center
+- Defensive Leaderboard
+- full Drive Efficiency table
+- rolling drive-yard graph
+- quarter splits
+- browser-persistent pinned player panel
+- global "/" command palette for pages and players
+- all previous Broadcast, Game HQ, Analytics Lab, Players and Postgame functionality retained
+
+Verification rule remains absolute: no source = —.

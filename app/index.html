@@ -43,8 +43,11 @@ svg.chart{width:100%;height:230px;display:block;overflow:visible}.axis{stroke:#3
 .broadcastGrid{display:grid;grid-template-columns:1.5fr .85fr;gap:14px}.bFieldCard{grid-row:span 2}.broadcastField{height:260px;position:relative;border-radius:12px;overflow:hidden;background:repeating-linear-gradient(90deg,#123d37 0,#123d37 calc(10% - 2px),#d9f0df33 calc(10% - 2px),#d9f0df33 10%);border:3px solid #eaf8ee44}.broadcastField:after{content:"50";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(90deg);font-size:60px;font-weight:900;color:#fff1}.yard{position:absolute;bottom:10px;color:#fff5;font-weight:900}.y10{left:9%}.y20{left:19%}.y30{left:29%}.y40{left:39%}.y50{left:49%}.ballMarker{position:absolute;left:50%;top:44%;font-size:28px;color:var(--gold);filter:drop-shadow(0 0 8px #ff9f43);transition:left .5s ease}.bDriveInfo{display:flex;justify-content:space-between;gap:10px;padding-top:12px;font-size:15px}.storyCard{margin-top:14px}.storyTimeline{min-height:150px;position:relative;display:flex;align-items:center;gap:18px;overflow-x:auto;padding:30px 12px}.storyAxis{position:absolute;left:15px;right:15px;top:74px;height:2px;background:#35575c}.storyEvent{position:relative;z-index:2;min-width:145px;max-width:190px;background:#0d2326;border:1px solid #31575b;border-radius:9px;padding:10px}.storyEvent.score{border-color:var(--gold)}.storyEvent.turnover{border-color:#ff6c72}.storyEvent.explosive{border-color:var(--det)}.storyEvent small{display:block;color:var(--mut);margin-top:5px}.broadcastBottom{display:flex;justify-content:space-between;gap:20px;padding:12px 4px;color:#a7c4c4;font-size:12px}
 body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{ }body.broadcasting header{display:none}body.broadcasting main{max-width:none;padding:14px 18px}body.broadcasting #broadcast{display:block!important}body.broadcasting .broadcastTop{position:sticky;top:0;z-index:20}.broadcastToggle{position:fixed;right:18px;bottom:18px;z-index:100;background:#ff9f43;color:#071316;border:0;border-radius:99px;padding:11px 16px;font-weight:950;cursor:pointer;box-shadow:0 6px 25px #0008}
 @media(max-width:950px){.broadcastTop{grid-template-columns:1fr 150px 1fr}.bTeam{padding:12px}.bTeam img{width:45px;height:45px}.bTeam b{font-size:36px}.broadcastGrid{grid-template-columns:1fr}.bFieldCard{grid-row:auto}}
+
+.cmdOverlay{display:none;position:fixed;inset:0;background:#000b;z-index:500;align-items:flex-start;justify-content:center;padding-top:12vh}.cmdOverlay.on{display:flex}.cmdBox{width:min(680px,90vw);background:#0b1d20;border:1px solid #386168;border-radius:14px;padding:14px;box-shadow:0 25px 80px #000}.cmdBox input{width:100%;font-size:20px;padding:15px}.cmdResult{padding:10px;border-bottom:1px solid #24454a;cursor:pointer}.cmdResult:hover{background:#123034}
+#pinBtn{background:var(--gold);border:0;border-radius:7px;padding:8px 14px;font-weight:900;cursor:pointer}.pinCard{display:grid;grid-template-columns:1fr auto;gap:10px;border-bottom:1px solid #24454a;padding:10px 0}.pinCard button{background:none;border:1px solid #3b5b60;color:var(--mut);border-radius:6px}
 </style></head><body>
-<header><div class="brand">GRIDIRON <span>ATLAS</span><small style="display:block;font-size:9px;letter-spacing:2px;color:#8190a3;font-style:normal">GAME LAB · LIVE ANALYTICS</small></div><nav><button class="on" data-page="hq">GAME HQ</button><button data-page="lab">ANALYTICS LAB</button><button data-page="playercenter">PLAYERS</button><button data-page="broadcast">BROADCAST MODE</button><button data-page="overview">GAME</button><button data-page="starters">STARTERS</button><button data-page="teams">TEAM STATS</button><button data-page="live">LIVE CENTER</button></nav><div class="health" id="health">● VERIFIED MATCHUP</div></header>
+<header><div class="brand">GRIDIRON <span>ATLAS</span><small style="display:block;font-size:9px;letter-spacing:2px;color:#8190a3;font-style:normal">GAME LAB · LIVE ANALYTICS</small></div><nav><button class="on" data-page="hq">GAME HQ</button><button data-page="lab">ANALYTICS LAB</button><button data-page="playercenter">PLAYERS</button><button data-page="broadcast">BROADCAST MODE</button><button data-page="maxlab">MAX LAB</button><button data-page="overview">GAME</button><button data-page="starters">STARTERS</button><button data-page="teams">TEAM STATS</button><button data-page="live">LIVE CENTER</button></nav><div class="health" id="health">● VERIFIED MATCHUP</div></header>
 <section class="hero"><div class="tm"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/det.png"><div><small>1-0</small><h1>DETROIT</h1><b>LIONS</b></div></div><div class="vs"><div class="date">WEEK 2 · THU SEP 17 · 8:15 PM ET</div><b><span id="hqDetScore">0</span> &nbsp; DET — BUF &nbsp; <span id="hqBufScore">0</span></b><p><span id="hqStatus">Pregame</span> · Highmark Stadium · Prime Video</p></div><div class="tm right"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/buf.png"><div><small>1-0</small><h1>BUFFALO</h1><b>BILLS</b></div></div></section>
 <main class="wrap">
 
@@ -216,6 +219,35 @@ body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{
  <div class="broadcastBottom"><div><span class="taglive">LIVE FEED</span> <span id="bcFeed">Connecting…</span></div><div id="bcLatest">Waiting for kickoff.</div></div>
 </section>
 
+
+<section id="maxlab" class="page">
+ <div class="sectionlabel">Maximum analysis suite · sourced values only</div>
+ <div class="insightgrid">
+  <div class="insight"><small>QB Center</small><b>Goff ↔ Allen</b><p class="note">Live efficiency + progression</p></div>
+  <div class="insight"><small>Usage Center</small><b>Touches & Targets</b><p class="note">Only when feed supplies attempts/targets</p></div>
+  <div class="insight"><small>Trenches</small><b>Pressure & Run Game</b><p class="note">Sacks/TFL + team rushing context</p></div>
+  <div class="insight"><small>Defense</small><b>Impact Board</b><p class="note">Tackles · sacks · takeaways</p></div>
+ </div>
+ <div class="chartgrid">
+  <div class="card"><h2>QB COMMAND CENTER</h2><div class="body" id="qbMax"><p class="note">Waiting for verified passing lines.</p></div></div>
+  <div class="card"><h2>SKILL PLAYER USAGE</h2><div class="body" id="usageMax"><p class="note">Waiting for verified touches/targets.</p></div></div>
+ </div>
+ <div class="chartgrid">
+  <div class="card"><h2>DRIVE EFFICIENCY TABLE</h2><div class="body"><div class="playerTableWrap"><table class="playerTable"><thead><tr><th>Team</th><th>Result</th><th>Plays</th><th>Yards</th><th>Yds/Play</th><th>Time</th></tr></thead><tbody id="driveEffBody"></tbody></table></div></div></div>
+  <div class="card"><h2>ROLLING DRIVE PERFORMANCE</h2><div class="chartwrap"><svg class="chart" viewBox="0 0 700 230"><line class="axis" x1="42" y1="195" x2="680" y2="195"/><polyline id="detDriveLine" class="detline" points="42,195"/><polyline id="bufDriveLine" class="bufline" points="42,195"/></svg><div class="legend"><span><i style="background:var(--det)"></i>DET drive yards</span><span><i style="background:var(--buf)"></i>BUF drive yards</span></div></div></div>
+ </div>
+ <div class="chartgrid">
+  <div class="card"><h2>DEFENSIVE LEADERBOARD</h2><div class="body" id="defMax"><p class="note">Waiting for verified defensive box score.</p></div></div>
+  <div class="card"><h2>TRENCHES CENTER</h2><div class="body" id="trenchMax"><p class="note">Team sacks and rushing production populate from verified box-score fields.</p></div></div>
+ </div>
+ <div class="card" style="margin-top:14px"><h2>QUARTER SPLITS</h2><div class="body"><div class="matrix" id="quarterMatrix"><div class="head">Quarter</div><div class="head">DET Points</div><div class="head">BUF Points</div></div><p class="note">Per-quarter yardage stays — unless the feed explicitly supplies it.</p></div></div>
+ <div class="twocol" style="margin-top:14px">
+  <div class="card"><h2>PINNED PLAYERS</h2><div class="body"><div class="toolbar"><input id="pinInput" placeholder="Type a player name"><button id="pinBtn">PIN</button></div><div id="pinBoard"><p class="note">Pin players for a compact watch panel. Stored in this browser.</p></div></div></div>
+  <div class="card"><h2>COMMAND BAR</h2><div class="body"><p class="note">Press <b>/</b> anywhere, then search a player or section.</p><div id="commandHelp" class="drive"><b>/</b><span>Goff · Gibbs · drives · defense · broadcast · analytics</span><small>keyboard</small></div></div></div>
+ </div>
+</section>
+<div id="cmdOverlay" class="cmdOverlay"><div class="cmdBox"><input id="cmdInput" placeholder="Jump to player or section…"><div id="cmdResults"></div><small>ESC to close</small></div></div>
+
 <section id="overview" class="page"><div class="grid3">
 <div class="card"><h2>DETROIT · WEEK 1</h2><div class="body"><div class="grid3"><div class="kpi"><small>Points</small><b>31</b></div><div class="kpi"><small>Total Yards</small><b>369</b></div><div class="kpi"><small>Rush Yards</small><b>165</b></div></div><p class="note">Jared Goff: 206 pass YDS · Jahmyr Gibbs: 156 rush YDS · Amon-Ra St. Brown: 67 rec YDS.</p></div></div>
 <div class="card"><h2>MATCHUP IDENTITY</h2><div class="body"><div class="kpi"><small>Official game</small><b style="font-size:18px">2026 REG · WEEK 2</b></div><p class="note">This build keys the matchup by season/week/teams. The live adapter also uses ESPN event <b>401872932</b>, which currently resolves to Lions at Bills on Sep. 17, 2026.</p></div></div>
@@ -254,6 +286,25 @@ function updateBroadcast(d,det,buf,g){
  let events=[];plays.forEach(x=>{let t=x.text||"",type="";if(/touchdown|field goal is good|extra point is good|safety/i.test(t))type="score";else if(/intercept|fumble|turnover/i.test(t))type="turnover";else{let m=t.match(/for (\d+) yards?/i);if(m&&+m[1]>=20)type="explosive"}if(type)events.push({type,clock:x.clock||"—",text:t})});
  storyTimeline.innerHTML='<div class="storyAxis"></div>'+(events.length?events.slice(-12).map(e=>`<div class="storyEvent ${e.type}"><b>${e.type.toUpperCase()}</b><span>${e.text}</span><small>${e.clock}</small></div>`).join(""):'<p class="note">Major verified events will build across this timeline during the game.</p>');
 }
+
+
+function statObj(row){return row?.stats||{}}
+function findStat(o,patterns){for(let [k,v] of Object.entries(o||{}))if(patterns.some(p=>p.test(k)))return v;return "—"}
+function renderMaxLab(d,det,buf){
+ let ps=d.players||[];
+ let qbs=["Jared Goff","Josh Allen"].map(n=>ps.find(x=>x.name===n&&/pass/i.test(String(x.category))));
+ qbMax.innerHTML=qbs.map((r,i)=>{let o=statObj(r),n=i?"Josh Allen":"Jared Goff";return `<div class="drive"><b>${n}</b><span>CMP/ATT ${findStat(o,[/cmp.*att/i,/c\/att/i])} · YDS ${findStat(o,[/^yds$/i,/yard/i])} · TD ${findStat(o,[/^td$/i,/touchdown/i])}</span><small>RATE ${findStat(o,[/rate/i,/rtg/i])}</small></div>`}).join("");
+ let skill=ps.filter(x=>/rush|receiv/i.test(String(x.category))).slice(0,12);usageMax.innerHTML=skill.length?skill.map(x=>`<div class="drive"><b>${x.team||"—"}</b><span>${x.name}</span><small>${Object.entries(x.stats||{}).filter(([k])=>/att|target|rec|yd/i.test(k)).slice(0,3).map(([k,v])=>`${k}:${v}`).join(" · ")||"—"}</small></div>`).join(""):'<p class="note">Waiting for verified touches/targets.</p>';
+ let drives=d.drives||[];driveEffBody.innerHTML=drives.length?drives.slice().reverse().map(x=>{let pl=typeof x.plays==="number"?x.plays:(Array.isArray(x.plays)?x.plays.length:null),yp=(pl&&x.yards!=null)?(x.yards/pl).toFixed(1):"—";return `<tr><td>${x.team||"—"}</td><td>${x.result||"—"}</td><td>${pl??"—"}</td><td>${x.yards??"—"}</td><td>${yp}</td><td>${typeof x.time==="object"?(x.time.displayValue||"—"):(x.time||"—")}</td></tr>`}).join(""):'<tr><td colspan="6">—</td></tr>';
+ let defense=ps.filter(x=>/defen/i.test(String(x.category)));defMax.innerHTML=defense.length?defense.slice(0,14).map(x=>`<div class="drive"><b>${x.team||"—"}</b><span>${x.name}</span><small>${Object.entries(x.stats||{}).slice(0,4).map(([k,v])=>`${k}:${v}`).join(" · ")||"—"}</small></div>`).join(""):'<p class="note">Waiting for verified defensive box score.</p>';
+ trenchMax.innerHTML=`<div class="drive"><b>DET</b><span>Rush ${pick(det,["rushingYards","Rushing Yards"])} yds</span><small>Sacks ${pick(det,["sacks","Sacks"])}</small></div><div class="drive"><b>BUF</b><span>Rush ${pick(buf,["rushingYards","Rushing Yards"])} yds</span><small>Sacks ${pick(buf,["sacks","Sacks"])}</small></div>`;
+ let dl=d.linescores?.DET||[],bl=d.linescores?.BUF||[];quarterMatrix.innerHTML='<div class="head">Quarter</div><div class="head">DET Points</div><div class="head">BUF Points</div>'+[0,1,2,3,4].map(i=>`<div>${i<4?"Q"+(i+1):"OT"}</div><div>${dl[i]??"—"}</div><div>${bl[i]??"—"}</div>`).join("");
+ let by={DET:drives.filter(x=>x.team==="DET").slice(-8),BUF:drives.filter(x=>x.team==="BUF").slice(-8)},pts=(arr)=>{let max=Math.max(20,...arr.map(x=>Math.max(0,+x.yards||0))),den=Math.max(1,arr.length-1);return arr.map((x,i)=>`${42+i*(638/den)},${195-(Math.max(0,+x.yards||0)/max)*165}`).join(" ")||"42,195"};detDriveLine.setAttribute("points",pts(by.DET));bufDriveLine.setAttribute("points",pts(by.BUF));
+ renderPins();
+}
+let pins=[];try{pins=JSON.parse(localStorage.getItem("gaPins")||"[]")}catch(e){}
+function renderPins(){pinBoard.innerHTML=pins.length?pins.map(n=>{let row=(live.players||[]).find(x=>x.name===n),stats=row?Object.entries(row.stats||{}).slice(0,3).map(([k,v])=>`${k}:${v}`).join(" · "):"—";return `<div class="pinCard"><div><b>${n}</b><small style="display:block;color:var(--mut)">${stats}</small></div><button onclick="removePin('${n.replace(/'/g,"")}')">×</button></div>`}).join(""):'<p class="note">No pinned players yet.</p>'}
+function removePin(n){pins=pins.filter(x=>x!==n);localStorage.setItem("gaPins",JSON.stringify(pins));renderPins()}
 
 function baselineFor(name){let p=verified.find(x=>x.name===name);return p?p.past:"—"}
 function renderPlayerCenter(){
@@ -326,7 +377,7 @@ deltaBoard.innerHTML=delta("DET total yards",dLive,369,"fillDET")+delta("BUF tot
 let ds=d.drives||[], counts={TD:0,FG:0,PUNT:0,TO:0,OTHER:0};ds.forEach(x=>{let r=String(x.result||"").toUpperCase();if(r.includes("TOUCH"))counts.TD++;else if(r.includes("FIELD")||r.includes("FG"))counts.FG++;else if(r.includes("PUNT"))counts.PUNT++;else if(r.includes("INTER")||r.includes("FUMBLE")||r.includes("DOWNS"))counts.TO++;else counts.OTHER++});let total=Math.max(1,ds.length);driveDist.innerHTML=Object.entries(counts).map(([k,v])=>bar(k,v,total,"fillGold")).join("");
 let sig=`${g.period||0}|${g.detScore||0}|${g.bufScore||0}`;if(!stateHistory.length||stateHistory[stateHistory.length-1].sig!==sig){stateHistory.push({sig,text:`${g.status||"Game"} · DET ${g.detScore||0}, BUF ${g.bufScore||0}`});stateLog.innerHTML=stateHistory.slice(-8).reverse().map(x=>`<div class="drive"><b>STATE</b><span>${x.text}</span><small>live</small></div>`).join("")}
 
-updateBroadcast(d,det,buf,g);
+updateBroadcast(d,det,buf,g);renderMaxLab(d,det,buf);
 renderPlayerCenter();renderMilestones();
 let ex=detectExplosives(d.plays||[]);explosives.innerHTML=ex.length?ex.map(x=>`<div class="drive"><b>${x.clock||"—"}</b><span>${x.text}</span><small>explosive</small></div>`).join(""):'<p class="note">No qualifying explosive plays surfaced yet.</p>';
 let scoreDr=(d.drives||[]).filter(x=>/touch|field|fg/i.test(String(x.result||"")));scoringDrives.innerHTML=scoreDr.length?scoreDr.slice().reverse().map(x=>`<div class="drive"><b>${x.team}</b><span>${x.result}</span><small>${x.yards!=null?x.yards+" yds":"—"}</small></div>`).join(""):'<p class="note">No scoring drives surfaced yet.</p>';
@@ -337,5 +388,11 @@ let final=/^(final|final\/ot)$/i.test(statusText) || /\bfinal\b/i.test(statusTex
 postgame.classList.toggle("is-final",final);
 if(final){pgDet.textContent=g.detScore??0;pgBuf.textContent=g.bufScore??0;pgSummary.innerHTML=`Final box-score data remains available throughout Game HQ and Analytics Lab.`}
 health.textContent="● LIVE ADAPTER CONNECTED"}catch(e){health.textContent="● VERIFIED STATIC DATA · LIVE RETRYING";liveDot.className="sourceDot sourceWait";liveHealth.textContent="retrying"}}broadcastToggle.onclick=()=>{document.body.classList.toggle("broadcasting");let on=document.body.classList.contains("broadcasting");broadcastToggle.textContent=on?"EXIT BROADCAST":"FULLSCREEN BROADCAST";if(on){document.querySelectorAll(".page").forEach(x=>x.classList.remove("on"));broadcast.classList.add("on")} };
-draw();renderPlayerCenter();drawScoreGraph();drawYardGraph();refresh();setInterval(refresh,3000);
+
+pinBtn.onclick=()=>{let n=pinInput.value.trim();if(n&&!pins.includes(n)){pins.push(n);localStorage.setItem("gaPins",JSON.stringify(pins));pinInput.value="";renderPins()}};
+function goPage(id){document.querySelectorAll(".page").forEach(x=>x.classList.remove("on"));document.getElementById(id)?.classList.add("on");document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.page===id));cmdOverlay.classList.remove("on")}
+function commandResults(q){let sections=[["Game HQ","hq"],["Analytics Lab","lab"],["Players","playercenter"],["Broadcast Mode","broadcast"],["Max Lab","maxlab"],["Starters","overview"],["Team Stats","teamstats"],["Live Center","live"]];let items=sections.filter(x=>x[0].toLowerCase().includes(q.toLowerCase())).map(x=>({label:x[0],page:x[1]}));verified.filter(x=>x.name.toLowerCase().includes(q.toLowerCase())).slice(0,8).forEach(x=>items.push({label:x.name+" · "+x.team,page:"playercenter",player:x.name}));cmdResults.innerHTML=items.map((x,i)=>`<div class="cmdResult" data-i="${i}">${x.label}</div>`).join("");[...cmdResults.children].forEach((el,i)=>el.onclick=()=>{let x=items[i];goPage(x.page);if(x.player){pcSearch.value=x.player;renderPlayerCenter()}})}
+document.addEventListener("keydown",e=>{if(e.key==="/"&&document.activeElement.tagName!=="INPUT"){e.preventDefault();cmdOverlay.classList.add("on");cmdInput.value="";commandResults("");setTimeout(()=>cmdInput.focus(),0)}if(e.key==="Escape")cmdOverlay.classList.remove("on")});cmdInput.oninput=()=>commandResults(cmdInput.value);cmdOverlay.onclick=e=>{if(e.target===cmdOverlay)cmdOverlay.classList.remove("on")};
+
+draw();renderPlayerCenter();renderPins();drawScoreGraph();drawYardGraph();refresh();setInterval(refresh,3000);
 </script></body></html>

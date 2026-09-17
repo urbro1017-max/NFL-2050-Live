@@ -1,20 +1,21 @@
-# GRIDIRON ATLAS 3.12 — Control Deck
+# GRIDIRON ATLAS 4.0 — Command Center
 
-Navigation cleanup and consolidation on top of the 3.11 Game Intelligence build.
+The largest interface overhaul so far, built on the existing live-game engine and PostgreSQL archive.
 
-## Changes
-- Sidebar condensed to five plain-language destinations: GAME, SCOREBOARD, PLAYERS, ANALYSIS, HISTORY.
-- Settings remains the gear at the bottom of the rail.
-- Season and Replay are consolidated under HISTORY; Game Replay remains reachable from the History screen.
-- NFL Scoreboard sub-navigation reduced to five direct destinations: GAME LIVE, TEAM BOX, PLAYER BOX, PLAYS, DRIVES.
-- Removed duplicate Situational/Analytics buttons from the Scoreboard sub-nav; those tools remain accessible from Analysis.
-- Command palette labels updated to match the clearer navigation language.
-- All existing live-game, ESPN feed, PostgreSQL, player, scoring summary, and Game Intelligence functionality retained.
+## 4.0 highlights
+- New command-center shell with a fixed top context deck and redesigned left control rail.
+- Real Back button with in-app page history. Alt+Left also navigates back.
+- Condensed five-destination primary navigation: Game Center, NFL Games, Players, Analytics, Archive.
+- Settings remains a gear at the bottom of the rail.
+- NFL game sub-navigation renamed and rebuilt as a sticky segmented control: Overview, Team Stats, Player Stats, Play-by-Play, Drive Chart.
+- Stronger hierarchy, larger typography, glass/obsidian surfaces, acid-lime/violet accents, ambient grid, improved cards, spacing, responsive behavior, and overflow handling.
+- Quick NFL Games action in the top command deck; Alt+G opens NFL Games.
+- Existing verified-feed rule, ESPN provider integration, live engine, player stats, game intelligence, archive, and PostgreSQL persistence retained.
 
 ## Data integrity
-Feed-backed or clearly derived values only. Unknown/unavailable values remain `—`.
+If a value cannot be mapped to a verified connected field or clearly labeled derived calculation, GRIDIRON ATLAS displays `—`. No synthetic values are generated.
 
 ## Render
 Build: `pip install -r requirements.txt`
 Start: `python server.py`
-Keep `DATABASE_URL` private.
+Keep `DATABASE_URL` private and unchanged.

@@ -1,17 +1,19 @@
-HuddleIntel Game HQ PRO
+# SIDELINE ATLAS — Live Football Intelligence
 
-Preserves the verified starter and Week 1 data from the prior build and expands only Game HQ.
+A full visual overhaul of the verified Lions at Bills dashboard.
 
-Added:
-- press-box analyst strip: possession, down/distance, ball spot, quarter, clock, feed freshness
-- quarter-by-quarter scoring
-- situational football: third down, red zone, sacks, yards/play
-- offensive pass/rush balance
-- drive tracker
-- QB comparison
-- defensive impact panel
-- live score/team stats/leaders/play-by-play retained
-- 3-second refresh
-- no invented probabilities or unsupported formation data
+Core principles:
+- verified starters and Week 1 baselines preserved
+- live values never fabricated
+- 3-second game refresh
+- press-box information density without sci-fi styling
 
-Live fields show dashes until the upstream box score exposes them.
+New visual analysis:
+- cumulative live score graph
+- efficiency bars for yards/play and third-down rate
+- live-vs-Week-1 production bars
+- scoring timeline
+- compact live metric strip
+- existing drive tracker, QB comparison, situational football, offensive balance, defensive impact and play feed retained
+
+Matchup: Detroit Lions at Buffalo Bills, 2026 regular season Week 2.

@@ -1,22 +1,21 @@
-# GRIDIRON ATLAS 3.3 — Data Integrity & Live Game Cleanup
+# GRIDIRON ATLAS 3.6 — Nightshift UI
 
-This release focuses on correctness and live-game usability rather than adding empty modules.
+A visual-polish release built on the 3.5 Live Game Engine.
 
-## 3.3 changes
-- Exact team-stat alias matching. Passing/rushing/total yards can no longer match one another through fuzzy substring lookup.
-- ESPN team-logo fallback when a game package omits `team.logo`.
-- Missing drives and play-by-play now have explicit unavailable states instead of blank/broken panels.
-- Current drive is included when ESPN exposes it separately from previous drives.
-- Stale Universal Game Center version label updated to 3.3.
-- Archive copy no longer incorrectly claims SQLite when PostgreSQL is connected.
-- Existing PostgreSQL, ESPN Core discovery, ESPN CDN game feed, collector, replay, scouting, and Front Office functionality retained.
+## 3.6 UI changes
+- New midnight / indigo / ice / coral color system.
+- Glassy sticky header and cleaner active navigation.
+- Navigation scrolls instead of crushing labels into tiny boxes.
+- Responsive matchup hero with improved typography and logo sizing.
+- Cards, KPIs, tables, forms, matrices, drive rows, and player tiles redesigned for readability.
+- Long labels and live values wrap safely instead of overflowing their containers.
+- Improved tablet/mobile layouts and keyboard focus states.
+- Existing 3.5 live engine, ESPN feed integration, PostgreSQL archive, player center, analytics, replay, and scouting logic retained.
 
-## Data integrity rule
-If a value cannot be mapped to a verified field from the connected feed, GRIDIRON ATLAS displays `—`. It does not substitute a similar statistic.
+## Data integrity
+UI changes do not invent missing data. Unavailable verified values remain `—`.
 
 ## Render
-Build command: `pip install -r requirements.txt`
-
-Start command: `python server.py`
-
-Keep the existing `DATABASE_URL` environment variable private. Never commit it to GitHub.
+Build: `pip install -r requirements.txt`
+Start: `python server.py`
+Keep the existing `DATABASE_URL` private.

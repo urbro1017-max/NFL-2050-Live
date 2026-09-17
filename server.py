@@ -176,7 +176,7 @@ def game(gid,save=True):
         t=c.get("team") or {};ab=(t.get("abbreviation") or "").upper();lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
         teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
     st=comp.get("status") or {};typ=st.get("type") or {}
-    out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":lines,"source":PROVIDER,"fetched_at":int(time.time())}
+    out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"scoring_plays":[],"linescores":lines,"source":PROVIDER,"fetched_at":int(time.time())}
     for t in ((d.get("boxscore") or {}).get("teams") or []):
         ab=((t.get("team") or {}).get("abbreviation") or "").upper();out["team_stats"][ab]={str(x.get("label") or x.get("name")):x.get("displayValue") for x in t.get("statistics") or []}
     for grp in ((d.get("boxscore") or {}).get("players") or []):
@@ -187,12 +187,24 @@ def game(gid,save=True):
                 a=row.get("athlete") or {};out["players"].append({"id":a.get("id"),"team":ab,"name":a.get("displayName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,row.get("stats") or []))})
     for p in (d.get("plays") or [])[-180:]:
         out["plays"].append({"id":p.get("id"),"clock":(p.get("clock") or {}).get("displayValue"),"period":(p.get("period") or {}).get("number"),"text":p.get("text"),"team":((p.get("team") or {}).get("abbreviation")),"start":p.get("start"),"end":p.get("end"),"type":((p.get("type") or {}).get("text"))})
+    for sp in (d.get("scoringPlays") or []):
+        out["scoring_plays"].append({"id":sp.get("id"),"clock":(sp.get("clock") or {}).get("displayValue"),"period":(sp.get("period") or {}).get("number"),"text":sp.get("text"),"team":((sp.get("team") or {}).get("abbreviation")),"scoreValue":sp.get("scoreValue"),"awayScore":sp.get("awayScore"),"homeScore":sp.get("homeScore")})
     drive_block=d.get("drives") or {}
     drive_rows=list(drive_block.get("previous") or [])
     current=drive_block.get("current")
     if isinstance(current,dict) and current.get("id") not in {x.get("id") for x in drive_rows}: drive_rows.append(current)
     for x in drive_rows:
         out["drives"].append({"id":x.get("id"),"team":((x.get("team") or {}).get("abbreviation")) or "—","result":x.get("description") or x.get("displayResult") or x.get("result") or "Drive","yards":x.get("yards"),"time":x.get("timeElapsed"),"start":x.get("start"),"end":x.get("end"),"plays":x.get("offensivePlays") or x.get("plays")})
+    latest=out["plays"][-1] if out["plays"] else {}
+    start=latest.get("start") or {}; end=latest.get("end") or {}
+    out["situation"]={
+        "possession": latest.get("team") or (((current or {}).get("team") or {}).get("abbreviation") if isinstance(current,dict) else None) or "—",
+        "down": start.get("down") or "—",
+        "distance": start.get("distance") or "—",
+        "yardLine": start.get("yardLine") if start.get("yardLine") is not None else (end.get("yardLine") if end.get("yardLine") is not None else "—"),
+        "latestPlayId": latest.get("id"),
+        "latestPlay": latest.get("text") or "—"
+    }
     if save:STORE.save(out)
     return out
 
@@ -200,7 +212,9 @@ def collect_once():
     sb=scoreboard()
     for g in sb.get("games",[]):
         st=(g.get("status") or "").lower()
-        if any(x in st for x in ["q1","q2","q3","q4","half","ot","final","end"]):
+        # Collect live/final games. Status text varies by provider, so include common
+        # game-state words instead of depending only on Q1/Q2/etc.
+        if any(x in st for x in ["q1","q2","q3","q4","half","ot","final","end","in progress","halftime"]):
             try:game(g["id"],True)
             except Exception as e:LAST["error"]=str(e)
     LAST["collector"]=int(time.time())
@@ -234,8 +248,9 @@ def legacy_live():
     for t in g.get("teams",[]):
         if t["abbr"]=="DET":out["game"]["detScore"]=t["score"]
         if t["abbr"]=="BUF":out["game"]["bufScore"]=t["score"]
+    sit=g.get("situation") or {}
     if out["plays"]:
-        p=out["plays"][-1];out["game"]["downDistance"]=(p.get("text") or "")[:42];out["game"]["ballSpot"]=((p.get("end") or {}).get("yardLine")) or "—";out["game"]["possession"]=p.get("team") or "—"
+        p=out["plays"][-1];out["game"]["downDistance"]=(f"{sit.get('down')} & {sit.get('distance')}" if sit.get("down") not in [None,"—"] else (p.get("text") or "")[:42]);out["game"]["ballSpot"]=sit.get("yardLine","—");out["game"]["possession"]=sit.get("possession") or p.get("team") or "—"
     return out
 
 class H(SimpleHTTPRequestHandler):
@@ -251,7 +266,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.5","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":collect_once();return self.sendj({"ok":True,"last":LAST})
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

@@ -9,14 +9,14 @@ DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
-PROVIDER="ESPN_CDN_PUBLIC"
+PROVIDER="ESPN_CORE_DISCOVERY+CDN_GAME"
 LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None}
 
 def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/3.1)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/3.2)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
@@ -86,36 +86,69 @@ class Store:
         return out
 STORE=Store()
 
+def _event_id_from_ref(item):
+    if not isinstance(item,dict):return None
+    ref=item.get("$ref") or item.get("ref") or ""
+    if ref:
+        try:return ref.split("/events/",1)[1].split("?",1)[0].split("/",1)[0]
+        except Exception:pass
+    v=item.get("id")
+    return str(v) if v is not None else None
+
+def _game_summary_from_package(gid):
+    """Build a scoreboard row from the same CDN package used by Game HQ."""
+    raw=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_CDN_GAME_DISCOVERY")
+    d=raw.get("gamepackageJSON",raw)
+    comp=((d.get("header") or {}).get("competitions") or [{}])[0]
+    teams=[]
+    for c in comp.get("competitors") or []:
+        t=c.get("team") or {}
+        teams.append({
+            "side":c.get("homeAway"),
+            "abbr":t.get("abbreviation"),
+            "name":t.get("displayName") or t.get("shortDisplayName"),
+            "logo":t.get("logo"),
+            "score":c.get("score","0")
+        })
+    st=comp.get("status") or {}; typ=st.get("type") or {}
+    return {
+        "id":str(gid),
+        "date":comp.get("date") or (d.get("header") or {}).get("date"),
+        "status":typ.get("shortDetail") or typ.get("description") or "Scheduled",
+        "teams":teams
+    }
+
 def scoreboard(date=None):
-    # CDN first: this endpoint is optimized for live scoreboard traffic.
-    u="https://cdn.espn.com/core/nfl/scoreboard?xhr=1"
-    if date:u+="&dates="+date
+    """Discover NFL event IDs with ESPN Core, then hydrate rows from CDN game packages.
+
+    Core's events endpoint returns reference objects rather than the site-scoreboard
+    event shape. 3.1 incorrectly parsed those transports as interchangeable.
+    """
+    day=date or time.strftime("%Y%m%d")
+    u=f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events?dates={day}&limit=32"
     try:
-        raw=fetch(u,"ESPN_CDN_SCOREBOARD")
-        d=raw.get("content",raw) if isinstance(raw,dict) else raw
-        # Current CDN payloads can expose events either at the top level or
-        # through content; normalize without inventing missing values.
-        if isinstance(d,dict) and not d.get("events") and isinstance(raw,dict):
-            d=raw
+        raw=fetch(u,"ESPN_CORE_EVENTS")
+        ids=[]
+        for item in raw.get("items") or []:
+            gid=_event_id_from_ref(item)
+            if gid and gid not in ids:ids.append(gid)
+        games=[]
+        errors=[]
+        for gid in ids:
+            try:games.append(_game_summary_from_package(gid))
+            except Exception as e:errors.append(f"{gid}: {type(e).__name__}: {e}")
         LAST["scoreboard"]=int(time.time()); LAST["fallback"]=None
+        # A successful Core response with zero items is not a provider error.
+        if errors and not games:LAST["error"]="Scoreboard hydration failed: "+errors[0]
+        elif games:LAST["error"]=None
+        return {"games":games,"source":PROVIDER,"date":day,"event_count":len(ids)}
     except Exception:
-        # Site API is fallback only. If it is blocked, diagnostics retain the
-        # exact endpoint label that failed instead of a bare 403.
-        u2="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
-        if date:u2+="?dates="+date
-        try:
-            d=fetch(u2,"ESPN_SITE_SCOREBOARD_FALLBACK")
-            LAST["scoreboard"]=int(time.time()); LAST["fallback"]="site scoreboard"
-        except Exception:
-            return {"games":[],"source":"unavailable"}
-    games=[]
-    for e in d.get("events") or []:
-        comp=(e.get("competitions") or [{}])[0];teams=[]
-        for c in comp.get("competitors") or []:
-            t=c.get("team") or {};teams.append({"side":c.get("homeAway"),"abbr":t.get("abbreviation"),"name":t.get("displayName") or t.get("shortDisplayName"),"logo":t.get("logo"),"score":c.get("score","0")})
-        typ=((comp.get("status") or e.get("status") or {}).get("type") or {})
-        games.append({"id":str(e.get("id") or comp.get("id") or ""),"date":e.get("date"),"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","teams":teams})
-    return {"games":games,"source":PROVIDER}
+        # Preserve archive usability if discovery is temporarily unavailable.
+        archived=[]
+        for x in STORE.games():
+            archived.append({"id":x["id"],"status":x.get("status","Archived"),"teams":x.get("teams",[]),"date":None})
+        LAST["fallback"]="archive"
+        return {"games":archived,"source":"ARCHIVE_FALLBACK","date":day,"event_count":len(archived)}
 
 def game(gid,save=True):
     # CDN game package first. The site summary endpoint is retained only as a
@@ -206,7 +239,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":collect_once();return self.sendj({"ok":True,"last":LAST})
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

@@ -1,4 +1,4 @@
-# GRIDIRON ATLAS 3.0 — Football Intelligence Platform
+# GRIDIRON ATLAS 3.1 — Football Intelligence Platform
 
 Render-ready NFL analytics platform.
 
@@ -36,3 +36,10 @@ On Render, connect a Render Postgres database and provide its internal database 
 ## Hosting
 Build: `pip install -r requirements.txt`
 Start: `python server.py`
+
+
+## 3.1 provider reliability update
+- ESPN CDN scoreboard/game endpoints are now primary.
+- Site API is fallback only.
+- Diagnostics identify the failing provider endpoint instead of reporting only a generic HTTP error.
+- `/api/health` reports version `3.1`.

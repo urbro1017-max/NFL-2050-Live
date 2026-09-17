@@ -9,12 +9,26 @@ DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
-PROVIDER="ESPN_PUBLIC"
-LAST={"scoreboard":None,"collector":None,"error":None}
+PROVIDER="ESPN_CDN_PUBLIC"
+LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None}
 
-def fetch(u):
-    req=Request(u,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
-    with urlopen(req,timeout=10) as r:return json.loads(r.read().decode())
+def fetch(u,label="ESPN"):
+    # ESPN's public CDN endpoints are the primary transport. A browser-like
+    # header set avoids content-negotiation surprises while keeping credentials out.
+    req=Request(u,headers={
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/3.1)",
+        "Accept":"application/json,text/plain,*/*",
+        "Accept-Language":"en-US,en;q=0.9",
+        "Referer":"https://www.espn.com/",
+    })
+    try:
+        with urlopen(req,timeout=12) as r:
+            LAST["endpoint"]=label
+            return json.loads(r.read().decode())
+    except Exception as e:
+        LAST["endpoint"]=label
+        LAST["error"]=f"{label}: {type(e).__name__}: {e}"
+        raise
 
 class Store:
     def __init__(self):
@@ -73,10 +87,27 @@ class Store:
 STORE=Store()
 
 def scoreboard(date=None):
-    u="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
-    if date:u+="?dates="+date
-    try:d=fetch(u); LAST["scoreboard"]=int(time.time())
-    except Exception as e:LAST["error"]=str(e);return {"games":[],"source":"unavailable"}
+    # CDN first: this endpoint is optimized for live scoreboard traffic.
+    u="https://cdn.espn.com/core/nfl/scoreboard?xhr=1"
+    if date:u+="&dates="+date
+    try:
+        raw=fetch(u,"ESPN_CDN_SCOREBOARD")
+        d=raw.get("content",raw) if isinstance(raw,dict) else raw
+        # Current CDN payloads can expose events either at the top level or
+        # through content; normalize without inventing missing values.
+        if isinstance(d,dict) and not d.get("events") and isinstance(raw,dict):
+            d=raw
+        LAST["scoreboard"]=int(time.time()); LAST["fallback"]=None
+    except Exception:
+        # Site API is fallback only. If it is blocked, diagnostics retain the
+        # exact endpoint label that failed instead of a bare 403.
+        u2="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+        if date:u2+="?dates="+date
+        try:
+            d=fetch(u2,"ESPN_SITE_SCOREBOARD_FALLBACK")
+            LAST["scoreboard"]=int(time.time()); LAST["fallback"]="site scoreboard"
+        except Exception:
+            return {"games":[],"source":"unavailable"}
     games=[]
     for e in d.get("events") or []:
         comp=(e.get("competitions") or [{}])[0];teams=[]
@@ -87,11 +118,18 @@ def scoreboard(date=None):
     return {"games":games,"source":PROVIDER}
 
 def game(gid,save=True):
-    u=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}"
-    try:d=fetch(u)
+    # CDN game package first. The site summary endpoint is retained only as a
+    # fallback because some server environments receive 403 from site.api.
+    try:
+        raw=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_CDN_GAME")
+        d=raw.get("gamepackageJSON",raw)
+        LAST["fallback"]=None
     except Exception:
-        try:d=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}");d=d.get("gamepackageJSON",d)
-        except Exception:return STORE.game(gid) or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
+        try:
+            d=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}","ESPN_SITE_SUMMARY_FALLBACK")
+            LAST["fallback"]="site summary"
+        except Exception:
+            return STORE.game(gid) or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
     comp=((d.get("header") or {}).get("competitions") or [{}])[0];teams=[];lines={}
     for c in comp.get("competitors") or []:
         t=c.get("team") or {};ab=(t.get("abbreviation") or "").upper();lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
@@ -168,7 +206,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":collect_once();return self.sendj({"ok":True,"last":LAST})
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

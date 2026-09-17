@@ -1,21 +1,9 @@
-# NFL 2050 LIVE — Hosted Edition
+# Gridiron Nexus
 
-This package is configured as a Render web service.
+Hosted live football intelligence dashboard. This redesign consolidates the prior 16-module interface into five distinct areas: Game Center, Teams, Players, Season, and Data.
 
-## Deploy
-1. Put these files in a GitHub repository.
-2. In Render, choose **New > Web Service** and connect that repository.
-3. Render can read `render.yaml`; otherwise use:
-   - Runtime: Python
-   - Build command: `echo No dependencies to install`
-   - Start command: `python server.py`
-4. Deploy.
-5. Open the generated `onrender.com` address.
+## Render
+Build command: `echo No dependencies to install`
+Start command: `python server.py`
 
-The server binds to `0.0.0.0` and Render's `PORT` environment variable.
-
-## Data
-The backend currently targets ESPN event `401872932` (Detroit vs Buffalo, Sep 17 2026) and polls public-facing ESPN game feeds. No private API keys are embedded.
-
-## Note
-Render's free web service may spin down after inactivity, so the first load after a period of inactivity can take longer.
+The live game feed uses the existing server endpoint. Season-ranking UI intentionally leaves unavailable rankings blank rather than fabricating values.

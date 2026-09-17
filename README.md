@@ -58,3 +58,23 @@ GRIDIRON ATLAS 1.0:
 - source inspector and explicit unavailable-state handling
 - original DET/BUF deep-dive suite retained as the flagship game lab
 - no guessed statistics: unavailable = —
+
+GRIDIRON ATLAS 2.0 MAXIMUM:
+- persistent SQLite game archive + verified snapshots
+- Season HQ / archive / watchlist / game comparison
+- player watchlist persistence
+- situational Red Zone, 3rd/4th Down, Explosive Play, Turnover labs
+- play-by-play field playback controls
+- universal team/player/game pages through game selector
+- CSV export endpoint: /api/export.csv?id=GAME_ID
+- print-to-PDF compatible reports via browser print
+- source/provenance inspector and connection diagnostics
+- keyboard shortcuts: G Game HQ, B Broadcast, P Players, S Scoreboard, / command bar
+- Atlas, Broadcast Black and Scouting Light themes
+- TV presentation mode
+- PWA manifest + offline shell service worker
+- archived games remain in SQLite across ordinary app restarts when persistent storage is available
+- existing Broadcast, MAX Lab, Analytics Lab, Players, Game HQ and DET/BUF flagship retained
+
+IMPORTANT HOSTING NOTE:
+Render's filesystem may be ephemeral depending on service/storage configuration. For truly permanent cloud history across redeploys, point GRIDIRON_DB at persistent storage or migrate the same schema to a managed database.

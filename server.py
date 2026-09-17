@@ -1,4 +1,4 @@
-import json,os,time
+import json,os,time,sqlite3,csv,io
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from urllib.request import Request,urlopen
 from urllib.parse import urlparse,parse_qs
@@ -7,6 +7,21 @@ from pathlib import Path
 HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).parent/"app"
 DEFAULT_GAME_ID="401872932"
 SNAPSHOTS={}
+DB=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
+def db():
+    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
+    c.executescript("""CREATE TABLE IF NOT EXISTS games(game_id TEXT PRIMARY KEY, payload TEXT, status TEXT, updated INTEGER);
+    CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY AUTOINCREMENT,game_id TEXT,ts INTEGER,payload TEXT);
+    CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);"""); c.commit(); return c
+def persist_game(g):
+    if not g.get("available"): return
+    c=db(); c.execute("INSERT INTO games VALUES(?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,updated=excluded.updated",(g["id"],json.dumps(g),g.get("status",""),int(time.time())))
+    snap={"t":int(time.time()),"status":g.get("status"),"scores":{x["abbr"]:x["score"] for x in g.get("teams",[])},"team_stats":g.get("team_stats",{})}
+    prev=c.execute("SELECT payload FROM snapshots WHERE game_id=? ORDER BY ts DESC,id DESC LIMIT 1",(g["id"],)).fetchone()
+    if not prev or json.loads(prev["payload"]).get("scores")!=snap["scores"] or json.loads(prev["payload"]).get("team_stats")!=snap["team_stats"]:
+        c.execute("INSERT INTO snapshots(game_id,ts,payload) VALUES(?,?,?)",(g["id"],snap["t"],json.dumps(snap)))
+    c.commit(); c.close()
+
 
 def fetch(u):
     req=Request(u,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"})
@@ -66,6 +81,7 @@ def generic_game(game_id):
     arr=SNAPSHOTS.setdefault(game_id,[])
     if not arr or arr[-1]["scores"]!=snap["scores"] or arr[-1]["yards"]!=snap["yards"]: arr.append(snap)
     SNAPSHOTS[game_id]=arr[-240:]
+    persist_game(out)
     return out
 
 def legacy_live():
@@ -87,6 +103,17 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/games":return self.sendj(scoreboard())
         if u.path=="/api/game":return self.sendj(generic_game((q.get("id") or [DEFAULT_GAME_ID])[0]))
         if u.path=="/api/history":return self.sendj({"id":(q.get("id") or [DEFAULT_GAME_ID])[0],"snapshots":SNAPSHOTS.get((q.get("id") or [DEFAULT_GAME_ID])[0],[])})
+        if u.path=="/api/archive":
+            c=db(); rows=c.execute("SELECT game_id,status,updated,payload FROM games ORDER BY updated DESC").fetchall(); c.close()
+            return self.sendj({"games":[{"id":r["game_id"],"status":r["status"],"updated":r["updated"],"teams":json.loads(r["payload"]).get("teams",[])} for r in rows]})
+        if u.path=="/api/snapshots":
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]; c=db(); rows=c.execute("SELECT payload FROM snapshots WHERE game_id=? ORDER BY ts",(gid,)).fetchall(); c.close()
+            return self.sendj({"id":gid,"snapshots":[json.loads(r["payload"]) for r in rows]})
+        if u.path=="/api/export.csv":
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]; g=generic_game(gid); buf=io.StringIO(); w=csv.writer(buf); w.writerow(["team","player","category","stat","value"])
+            for p in g.get("players",[]):
+                for k,v in (p.get("stats") or {}).items(): w.writerow([p.get("team"),p.get("name"),p.get("category"),k,v])
+            b=buf.getvalue().encode(); self.send_response(200); self.send_header("Content-Type","text/csv"); self.send_header("Content-Disposition",f'attachment; filename="gridiron-{gid}.csv"'); self.send_header("Content-Length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if u.path=="/api/live":return self.sendj(legacy_live())
         if u.path=="/":self.path="/index.html"
         super().do_GET()

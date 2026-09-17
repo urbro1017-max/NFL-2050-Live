@@ -48,8 +48,10 @@ body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{
 #pinBtn{background:var(--gold);border:0;border-radius:7px;padding:8px 14px;font-weight:900;cursor:pointer}.pinCard{display:grid;grid-template-columns:1fr auto;gap:10px;border-bottom:1px solid #24454a;padding:10px 0}.pinCard button{background:none;border:1px solid #3b5b60;color:var(--mut);border-radius:6px}
 
 .gamePicker{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}.gamePick{border:1px solid #2d5358;background:#0b2023;border-radius:10px;padding:12px;cursor:pointer}.gamePick:hover{border-color:var(--gold);transform:translateY(-1px)}.gamePick .teams{display:flex;justify-content:space-between;align-items:center;font-weight:900}.gamePick img{width:35px;height:35px;object-fit:contain}.uScore{display:grid;grid-template-columns:1fr 240px 1fr;align-items:center;background:#07191c;border:1px solid #31565b;border-radius:14px}.uTeam{display:flex;align-items:center;justify-content:center;gap:16px;padding:18px}.uTeam img{width:64px;height:64px;object-fit:contain}.uTeam b{font-size:48px}.uTeam small{font-weight:900;letter-spacing:1px}.uMiddle{text-align:center;border-left:1px solid #31565b;border-right:1px solid #31565b;padding:15px}.uMiddle>*{display:block}.uMiddle strong{font-size:27px}.sourceBadge{display:inline-block;border:1px solid #3b656b;border-radius:99px;padding:3px 8px;color:#9bc6c8;font-size:10px}
-</style></head><body>
-<header><div class="brand">GRIDIRON <span>ATLAS</span><small style="display:block;font-size:9px;letter-spacing:2px;color:#8190a3;font-style:normal">GAME LAB · LIVE ANALYTICS</small></div><nav><button class="on" data-page="hq">GAME HQ</button><button data-page="lab">ANALYTICS LAB</button><button data-page="playercenter">PLAYERS</button><button data-page="broadcast">BROADCAST MODE</button><button data-page="maxlab">MAX LAB</button><button data-page="league">NFL SCOREBOARD</button><button data-page="overview">GAME</button><button data-page="starters">STARTERS</button><button data-page="teams">TEAM STATS</button><button data-page="live">LIVE CENTER</button></nav><div class="health" id="health">● VERIFIED MATCHUP</div></header>
+
+.toolbar select,.toolbar button,#settings select,#settings button{background:#10272a;color:#e9f5f4;border:1px solid #385b60;border-radius:7px;padding:8px 11px}.theme-scout{background:#f2efe6!important;color:#172124!important}.theme-scout .card,.theme-scout .insight,.theme-scout .uScore{background:#fff!important;color:#172124!important}.theme-broadcast{background:#000!important}.tvMode header,.tvMode .hero{display:none!important}.tvMode main{max-width:none!important;padding:10px!important}.prov{display:inline-block;border:1px solid #3e6b70;border-radius:99px;padding:3px 8px;margin:3px;font-size:10px}.replayMeta{color:var(--mut);font-size:11px}
+</style><link rel="manifest" href="/manifest.webmanifest"></head><body>
+<header><div class="brand">GRIDIRON <span>ATLAS</span><small style="display:block;font-size:9px;letter-spacing:2px;color:#8190a3;font-style:normal">GAME LAB · LIVE ANALYTICS</small></div><nav><button class="on" data-page="hq">GAME HQ</button><button data-page="lab">ANALYTICS LAB</button><button data-page="playercenter">PLAYERS</button><button data-page="broadcast">BROADCAST MODE</button><button data-page="maxlab">MAX LAB</button><button data-page="league">NFL SCOREBOARD</button><button data-page="seasonhq">SEASON HQ</button><button data-page="situational">SITUATIONAL LAB</button><button data-page="settings">SETTINGS</button><button data-page="overview">GAME</button><button data-page="starters">STARTERS</button><button data-page="teams">TEAM STATS</button><button data-page="live">LIVE CENTER</button></nav><div class="health" id="health">● VERIFIED MATCHUP</div></header>
 <section class="hero"><div class="tm"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/det.png"><div><small>1-0</small><h1>DETROIT</h1><b>LIONS</b></div></div><div class="vs"><div class="date">WEEK 2 · THU SEP 17 · 8:15 PM ET</div><b><span id="hqDetScore">0</span> &nbsp; DET — BUF &nbsp; <span id="hqBufScore">0</span></b><p><span id="hqStatus">Pregame</span> · Highmark Stadium · Prime Video</p></div><div class="tm right"><img src="https://a.espncdn.com/i/teamlogos/nfl/500/buf.png"><div><small>1-0</small><h1>BUFFALO</h1><b>BILLS</b></div></div></section>
 <main class="wrap">
 
@@ -269,6 +271,25 @@ body.broadcasting header,body.broadcasting .hero,body.broadcasting #broadcast~*{
  </div>
 </section>
 
+
+<section id="seasonhq" class="page">
+ <div class="sectionlabel">GRIDIRON ATLAS 2.0 · Persistent Football Workspace</div>
+ <div class="insightgrid"><div class="insight"><small>Archive</small><b id="archiveCount">0 Games</b><p class="note">Completed/visited games stored in SQLite</p></div><div class="insight"><small>Watchlist</small><b id="watchCount">0 Players</b><p class="note">Saved in your browser</p></div><div class="insight"><small>Compare</small><b>Game ↔ Game</b><p class="note">Choose two archived games below</p></div><div class="insight"><small>Exports</small><b>CSV / Print-PDF</b><p class="note">Portable game reports</p></div></div>
+ <div class="chartgrid"><div class="card"><h2>GAME ARCHIVE</h2><div class="body" id="archiveGames"><p class="note">Loading archive…</p></div></div><div class="card"><h2>WATCHLIST</h2><div class="body" id="globalWatch"><p class="note">Pin players from Players/MAX Lab.</p></div></div></div>
+ <div class="card" style="margin-top:14px"><h2>GAME COMPARISON</h2><div class="body"><div class="toolbar"><select id="cmpA"></select><select id="cmpB"></select><button id="compareBtn">COMPARE</button></div><div id="compareOut"></div></div></div>
+</section>
+<section id="situational" class="page">
+ <div class="sectionlabel">Situational Lab · play-by-play derived, never guessed</div>
+ <div class="chartgrid"><div class="card"><h2>RED ZONE LAB</h2><div class="body" id="redZoneLab"><p class="note">Select a universal game first.</p></div></div><div class="card"><h2>3RD / 4TH DOWN LAB</h2><div class="body" id="downLab">—</div></div></div>
+ <div class="chartgrid"><div class="card"><h2>EXPLOSIVE PLAY LAB</h2><div class="body" id="explosiveLab">—</div></div><div class="card"><h2>TURNOVER IMPACT</h2><div class="body" id="turnoverLab">—</div></div></div>
+ <div class="card" style="margin-top:14px"><h2>DRIVE PLAYBACK</h2><div class="body"><div class="broadcastField"><div id="replayBall" class="ballMarker">●</div></div><div class="toolbar"><button id="prevPlay">◀</button><span id="replayText">Choose a game.</span><button id="nextPlay">▶</button></div></div></div>
+</section>
+<section id="settings" class="page">
+ <div class="sectionlabel">Settings · diagnostics · presentation</div>
+ <div class="chartgrid"><div class="card"><h2>DISPLAY</h2><div class="body"><label>Theme <select id="themeSel"><option value="atlas">Atlas Dark</option><option value="broadcast">Broadcast Black</option><option value="scout">Scouting Light</option></select></label><br><br><label>Refresh <select id="refreshSel"><option value="3000">3 sec</option><option value="5000">5 sec</option><option value="10000">10 sec</option></select></label><br><br><button id="tvBtn">TV PRESENTATION MODE</button></div></div><div class="card"><h2>CONNECTION DIAGNOSTICS</h2><div class="body" id="diag"><div class="drive"><b>Scoreboard</b><span>Checking…</span><small>—</small></div></div></div></div>
+ <div class="card" style="margin-top:14px"><h2>DATA PROVENANCE</h2><div class="body"><p class="note">GRIDIRON ATLAS labels connected values as LIVE/PUBLIC FEED, locally archived values as ARCHIVED, and unavailable fields as —. No synthetic values are generated.</p><div id="provLog"></div></div></div>
+</section>
+
 <section id="overview" class="page"><div class="grid3">
 <div class="card"><h2>DETROIT · WEEK 1</h2><div class="body"><div class="grid3"><div class="kpi"><small>Points</small><b>31</b></div><div class="kpi"><small>Total Yards</small><b>369</b></div><div class="kpi"><small>Rush Yards</small><b>165</b></div></div><p class="note">Jared Goff: 206 pass YDS · Jahmyr Gibbs: 156 rush YDS · Amon-Ra St. Brown: 67 rec YDS.</p></div></div>
 <div class="card"><h2>MATCHUP IDENTITY</h2><div class="body"><div class="kpi"><small>Official game</small><b style="font-size:18px">2026 REG · WEEK 2</b></div><p class="note">This build keys the matchup by season/week/teams. The live adapter also uses ESPN event <b>401872932</b>, which currently resolves to Lions at Bills on Sep. 17, 2026.</p></div></div>
@@ -311,7 +332,7 @@ async function loadUniversal(id){
   uDrives.innerHTML=d.drives?.length?d.drives.slice(-8).reverse().map(x=>`<div class="drive"><b>${x.team}</b><span>${x.result}</span><small>${x.yards!=null?x.yards+" yds":"—"}</small></div>`).join(""):'<p class="note">—</p>';
   renderUniversalPlayers("");
   uPlays.innerHTML=d.plays?.length?d.plays.slice(-16).reverse().map(x=>`<div class="drive"><b>${x.period?"Q"+x.period:"—"} ${x.clock||""}</b><span>${x.text||"—"}</span><small>${x.team||""}</small></div>`).join(""):'<p class="note">—</p>';
-  let hr=await fetch("/api/history?id="+encodeURIComponent(id),{cache:"no-store"}),hd=await hr.json();uHistory.innerHTML=hd.snapshots?.length?hd.snapshots.slice(-12).map(x=>`<span class="sourceBadge">${new Date(x.t*1000).toLocaleTimeString()} · ${Object.entries(x.scores||{}).map(([k,v])=>k+" "+v).join(" / ")}</span>`).join(" "):'<span class="sourceBadge">Snapshot starts after first successful refresh</span>';
+  renderSituational();provLog.innerHTML=`<span class="prov">PUBLIC GAME FEED</span><span class="prov">${d.fetched_at?new Date(d.fetched_at*1000).toLocaleTimeString():"—"}</span>`;let hr=await fetch("/api/history?id="+encodeURIComponent(id),{cache:"no-store"}),hd=await hr.json();uHistory.innerHTML=hd.snapshots?.length?hd.snapshots.slice(-12).map(x=>`<span class="sourceBadge">${new Date(x.t*1000).toLocaleTimeString()} · ${Object.entries(x.scores||{}).map(([k,v])=>k+" "+v).join(" / ")}</span>`).join(" "):'<span class="sourceBadge">Snapshot starts after first successful refresh</span>';
  }catch(e){universalHQ.style.display="block";uInspector.textContent="Game feed unavailable";uStats.innerHTML='<p class="note">—</p>'}
 }
 function renderUniversalPlayers(q){
@@ -320,6 +341,39 @@ function renderUniversalPlayers(q){
 }
 uPlayerSearch.oninput=()=>renderUniversalPlayers(uPlayerSearch.value);
 loadLeague();
+
+
+let replayIndex=0, archived=[];
+function labRows(rows){return rows.length?rows.slice(-20).map(x=>`<div class="drive"><b>${x.period?"Q"+x.period:"—"} ${x.clock||""}</b><span>${x.text||"—"}</span><small>${x.team||"—"}</small></div>`).join(""):'<p class="note">No verified matching plays yet.</p>'}
+function renderSituational(){
+ let p=universalGame?.plays||[];
+ redZoneLab.innerHTML=labRows(p.filter(x=>{let y=(x.start||{}).yardLine;return y!=null&&+y<=20}));
+ downLab.innerHTML=labRows(p.filter(x=>/3rd|4th/i.test(x.text||"")));
+ explosiveLab.innerHTML=labRows(p.filter(x=>{let m=(x.text||"").match(/for (\d+) yards?/i);return m&&+m[1]>=20}));
+ turnoverLab.innerHTML=labRows(p.filter(x=>/intercept|fumble|turnover/i.test(x.text||"")));
+ replayIndex=Math.max(0,p.length-1);renderReplay();
+}
+function renderReplay(){
+ let p=universalGame?.plays||[],x=p[replayIndex];if(!x){replayText.textContent="No verified plays available.";return}
+ replayText.innerHTML=`<b>${x.period?"Q"+x.period:""} ${x.clock||""}</b> · ${x.text||"—"}`;
+ let y=(x.end||{}).yardLine;if(y!=null)replayBall.style.left=Math.max(2,Math.min(98,+y))+"%";
+}
+prevPlay.onclick=()=>{replayIndex=Math.max(0,replayIndex-1);renderReplay()};nextPlay.onclick=()=>{replayIndex=Math.min((universalGame?.plays?.length||1)-1,replayIndex+1);renderReplay()};
+async function loadArchive(){
+ try{let r=await fetch("/api/archive",{cache:"no-store"}),d=await r.json();archived=d.games||[];archiveCount.textContent=archived.length+" Games";
+ archiveGames.innerHTML=archived.length?archived.map(g=>`<div class="drive"><b>${g.teams.map(x=>x.abbr).join(" @ ")||g.id}</b><span>${g.status}</span><small>${new Date(g.updated*1000).toLocaleString()}</small></div>`).join(""):'<p class="note">Games appear here after GRIDIRON ATLAS successfully loads them.</p>';
+ let opts='<option value="">Choose game</option>'+archived.map(g=>`<option value="${g.id}">${g.teams.map(x=>x.abbr).join(" / ")} · ${g.status}</option>`).join("");cmpA.innerHTML=opts;cmpB.innerHTML=opts;
+ }catch(e){archiveGames.innerHTML='<p class="note">Archive unavailable.</p>'}
+ renderGlobalWatch();
+}
+function renderGlobalWatch(){let names=pins||[];watchCount.textContent=names.length+" Players";globalWatch.innerHTML=names.length?names.map(n=>`<div class="drive"><b>${n}</b><span>WATCHLIST</span><small>Open a game containing this player for live stats.</small></div>`).join(""):'<p class="note">No pinned players yet.</p>'}
+compareBtn.onclick=async()=>{if(!cmpA.value||!cmpB.value)return;let [a,b]=await Promise.all([fetch("/api/game?id="+cmpA.value).then(x=>x.json()),fetch("/api/game?id="+cmpB.value).then(x=>x.json())]);compareOut.innerHTML=`<div class="twocol"><div class="drive"><b>${a.teams.map(x=>x.abbr).join(" / ")}</b><span>${a.teams.map(x=>x.score).join(" - ")}</span><small>${a.status}</small></div><div class="drive"><b>${b.teams.map(x=>x.abbr).join(" / ")}</b><span>${b.teams.map(x=>x.score).join(" - ")}</span><small>${b.status}</small></div></div>`}
+themeSel.onchange=()=>{document.body.classList.remove("theme-scout","theme-broadcast");if(themeSel.value!=="atlas")document.body.classList.add("theme-"+themeSel.value);localStorage.setItem("gaTheme",themeSel.value)}
+let savedTheme=localStorage.getItem("gaTheme")||"atlas";themeSel.value=savedTheme;themeSel.onchange();
+tvBtn.onclick=()=>document.body.classList.toggle("tvMode");
+async function diagnostics(){let t=Date.now();try{let r=await fetch("/api/games",{cache:"no-store"});let d=await r.json();diag.innerHTML=`<div class="drive"><b>Scoreboard</b><span>${r.ok?"CONNECTED":"FAILED"}</span><small>${Date.now()-t} ms</small></div><div class="drive"><b>Game Feed</b><span>${universalGame?.available?"CONNECTED":"WAITING"}</span><small>${universalGame?.source||"—"}</small></div><div class="drive"><b>Persistence</b><span>SQLite archive</span><small>${archived.length} games indexed</small></div>`}catch(e){diag.innerHTML='<div class="drive"><b>Scoreboard</b><span>FAILED</span><small>Provider/network unavailable</small></div>'}}
+document.addEventListener("keydown",e=>{if(["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName))return;let m={g:"hq",b:"broadcast",p:"playercenter",s:"league"};if(m[e.key.toLowerCase()])goPage(m[e.key.toLowerCase()])});
+loadArchive();diagnostics();
 
 let storyEvents=[];
 function teamStat(o,names){return pick(o,names)}
@@ -446,4 +500,4 @@ function commandResults(q){let sections=[["Game HQ","hq"],["Analytics Lab","lab"
 document.addEventListener("keydown",e=>{if(e.key==="/"&&document.activeElement.tagName!=="INPUT"){e.preventDefault();cmdOverlay.classList.add("on");cmdInput.value="";commandResults("");setTimeout(()=>cmdInput.focus(),0)}if(e.key==="Escape")cmdOverlay.classList.remove("on")});cmdInput.oninput=()=>commandResults(cmdInput.value);cmdOverlay.onclick=e=>{if(e.target===cmdOverlay)cmdOverlay.classList.remove("on")};
 
 draw();renderPlayerCenter();renderPins();drawScoreGraph();drawYardGraph();refresh();setInterval(refresh,3000);
-</script></body></html>
+if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});</script></body></html>

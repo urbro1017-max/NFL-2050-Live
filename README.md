@@ -1,21 +1,19 @@
-# GRIDIRON ATLAS 3.6 — Nightshift UI
+# GRIDIRON ATLAS 3.7 — Voltage Rail UI
 
-A visual-polish release built on the 3.5 Live Game Engine.
+A visual redesign of 3.6 with the existing live-game engine preserved.
 
-## 3.6 UI changes
-- New midnight / indigo / ice / coral color system.
-- Glassy sticky header and cleaner active navigation.
-- Navigation scrolls instead of crushing labels into tiny boxes.
-- Responsive matchup hero with improved typography and logo sizing.
-- Cards, KPIs, tables, forms, matrices, drive rows, and player tiles redesigned for readability.
-- Long labels and live values wrap safely instead of overflowing their containers.
-- Improved tablet/mobile layouts and keyboard focus states.
-- Existing 3.5 live engine, ESPN feed integration, PostgreSQL archive, player center, analytics, replay, and scouting logic retained.
+## 3.7 changes
+- Desktop navigation moved to a fixed vertical left rail.
+- New obsidian / acid-lime / violet color system while preserving team-specific DET/BUF accents.
+- More horizontal room for football data and cleaner content hierarchy.
+- Stronger text wrapping and overflow handling for KPI cards, tables, drives, and navigation.
+- Responsive compact navigation behavior for smaller screens.
+- Existing live feed, player stats, PostgreSQL archive, ESPN discovery/CDN parsing, replay, scouting, and Front Office modules retained.
 
 ## Data integrity
-UI changes do not invent missing data. Unavailable verified values remain `—`.
+Unavailable connected-feed values remain `—`; the UI does not invent missing statistics.
 
 ## Render
 Build: `pip install -r requirements.txt`
 Start: `python server.py`
-Keep the existing `DATABASE_URL` private.
+Keep `DATABASE_URL` private and unchanged.

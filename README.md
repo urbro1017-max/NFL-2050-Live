@@ -1,16 +1,20 @@
-# GRIDIRON ATLAS 3.8 — Voltage Rail Refined
+# GRIDIRON ATLAS 3.12 — Control Deck
 
-A readability and navigation cleanup of 3.7 with the existing live-game engine preserved.
+Navigation cleanup and consolidation on top of the 3.11 Game Intelligence build.
 
-## 3.8 changes
-- Increased global UI typography and line-height for easier live-game scanning.
-- Larger sidebar labels, cards, tables, notes, KPI labels, player text, and live-game values.
-- Removed the Scouting tab and scouting notebook UI.
-- Replaced the Settings text tab with a compact gear icon, including accessible label/title.
-- Preserved the Voltage Rail obsidian + acid-lime + violet colorway.
-- Existing ESPN feed, PostgreSQL persistence, live-game engine, player stats, replay, and Front Office functionality retained.
+## Changes
+- Sidebar condensed to five plain-language destinations: GAME, SCOREBOARD, PLAYERS, ANALYSIS, HISTORY.
+- Settings remains the gear at the bottom of the rail.
+- Season and Replay are consolidated under HISTORY; Game Replay remains reachable from the History screen.
+- NFL Scoreboard sub-navigation reduced to five direct destinations: GAME LIVE, TEAM BOX, PLAYER BOX, PLAYS, DRIVES.
+- Removed duplicate Situational/Analytics buttons from the Scoreboard sub-nav; those tools remain accessible from Analysis.
+- Command palette labels updated to match the clearer navigation language.
+- All existing live-game, ESPN feed, PostgreSQL, player, scoring summary, and Game Intelligence functionality retained.
+
+## Data integrity
+Feed-backed or clearly derived values only. Unknown/unavailable values remain `—`.
 
 ## Render
-Build command: `pip install -r requirements.txt`
-Start command: `python server.py`
-Keep the existing `DATABASE_URL` private.
+Build: `pip install -r requirements.txt`
+Start: `python server.py`
+Keep `DATABASE_URL` private.

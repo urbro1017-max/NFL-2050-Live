@@ -1,14 +1,21 @@
-# GRIDIRON ATLAS 11.1 — SUNDAY READY
+# GRIDIRON ATLAS 12.0 — ATLAS ONE
 
-Reliability overhaul built on 11.0 NFL Week Engine.
+The largest consolidation release yet. 12.0 turns the Sunday Week Engine into the front door of a unified NFL analytics operating system.
 
-## 11.1 changes
-- Adaptive browser polling: live games fast, near-kickoff games moderate, distant pregame slow, final games stop polling.
-- Completed games are served from the Atlas archive for normal UI reads instead of repeatedly hitting upstream providers.
-- Week collector records discovered/attempted/succeeded/failed/skipped counts and isolates background errors.
-- Sunday Command adds All / Live / Upcoming / Final filters and collection-state messaging.
-- Final Game Center swaps live situation KPIs for final team comparisons and labels the last possession correctly.
-- Week schedule cache tightened while full game hydration remains state-aware.
-- Service worker cache bumped to v111.
+## Major changes
+- ATLAS ONE NFL Command Center with kickoff-window grouping, team logos, records, venue context, live/final/upcoming states, and one-click game drilldown.
+- Atlas Data Core telemetry: PostgreSQL/archive coverage, final-game count, verified player coverage, teams seen, and collector state.
+- Data Trust rail on the selected game showing live/final/archive lineage, feed age, player rows and play-event coverage.
+- New `/api/atlas` product-level coverage endpoint and `/api/quality` game-quality endpoint.
+- Adaptive background collector sleeps slower when no games are live and returns to the configured cadence during live windows.
+- Upcoming games remain schedule-only until the collection window; archived finals remain local-first.
+- Legacy Game Center switcher removed from the Command Center so the six-product navigation remains the product hierarchy.
+- Sunday slate grouped into Thursday / Sunday Early / Sunday Late / Sunday Night / Monday Night / Completed windows.
+- Passer-rating labels normalized to `PASSER RTG`; QBR is not synthesized from passer rating.
+- Service worker cache bumped to v120.
 
-Data integrity rule: unavailable statistics remain —. Atlas does not fabricate provider data.
+## Data policy
+Provider values are displayed as supplied. Atlas-derived values must be labeled. Unsupported data stays unavailable rather than being fabricated. Tracking-grade metrics remain source-gated.
+
+## Deploy
+Upload the contents of this ZIP directly to the existing GitHub repository root. Keep the existing Render service, build command, start command, and `DATABASE_URL` environment variable.

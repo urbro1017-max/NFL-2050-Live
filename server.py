@@ -11,6 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
+VERSION="12.0"
+BUILD_NAME="ATLAS ONE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -44,7 +46,7 @@ def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/3.2)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.0)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
@@ -211,7 +213,9 @@ def _scoreboard_event_row(ev):
     teams=[]
     for c in comp.get("competitors") or []:
         t=c.get("team") or {}
-        teams.append({"side":c.get("homeAway"),"abbr":(t.get("abbreviation") or "").upper(),"name":t.get("displayName") or t.get("shortDisplayName"),"logo":_team_logo(t),"score":c.get("score","0")})
+        records=c.get("records") or []
+        rec=next((r.get("summary") for r in records if str(r.get("type") or "").lower() in ("total","overall")),None) or (records[0].get("summary") if records else None)
+        teams.append({"side":c.get("homeAway"),"abbr":(t.get("abbreviation") or "").upper(),"name":t.get("displayName") or t.get("shortDisplayName"),"logo":_team_logo(t),"score":c.get("score","0"),"record":rec,"rank":c.get("curatedRank",{}).get("current") if isinstance(c.get("curatedRank"),dict) else None})
     st=comp.get("status") or {}; typ=st.get("type") or {}
     return {"id":str(ev.get("id") or comp.get("id") or ""),"date":ev.get("date") or comp.get("date"),"name":ev.get("name"),"shortName":ev.get("shortName"),"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or "—","teams":teams,"venue":((comp.get("venue") or {}).get("fullName")),"season":(ev.get("season") or {}).get("year"),"season_type":(ev.get("season") or {}).get("type"),"week":(ev.get("week") or {}).get("number")}
 
@@ -476,10 +480,13 @@ def collect_once():
 
 def collector():
     while True:
-        try:collect_once()
+        stats=None
+        try:stats=collect_once()
         except Exception as e:
             LAST["collector_errors"]=[f"collector: {type(e).__name__}"]
-        time.sleep(COLLECT_SECONDS)
+        # Slow down when nothing is live; wake faster during games.
+        delay=COLLECT_SECONDS if (stats or {}).get("live") else max(60,COLLECT_SECONDS)
+        time.sleep(delay)
 
 
 
@@ -1047,6 +1054,49 @@ def league_hq():
     out={'season':2026,'standings':standings,'leaders':leaders,'teams':profiles,**structure,'errors':errors,'source':'ESPN_PUBLIC_SEASON_FEEDS+ATLAS_VERIFIED_STORE','updated':int(now)}
     LEAGUE_CACHE.update(ts=now,value=out);return out
 
+
+def atlas_overview():
+    """Small, fast product-level health/coverage payload built from Atlas-owned data."""
+    rows=STORE.games()
+    finals=[]; live=[]; upcoming=[]; player_ids=set(); player_names=set(); teams=set(); snapshots=0
+    last_final=None
+    for meta in rows:
+        g=STORE.game(str(meta.get("id"))) or {}
+        state=str(g.get("state") or "").lower()
+        done=bool(g.get("completed") or state=="post" or str(g.get("status") or "").lower().startswith("final"))
+        if done: finals.append(g)
+        elif state=="in": live.append(g)
+        else: upcoming.append(g)
+        for t in g.get("teams") or []:
+            if t.get("abbr"): teams.add(t.get("abbr"))
+        if done:
+            for pl in g.get("players") or []:
+                if pl.get("id"): player_ids.add(str(pl.get("id")))
+                elif pl.get("name"): player_names.add(str(pl.get("name")))
+        if done and (last_final is None or int(meta.get("updated") or 0)>int(last_final.get("updated") or 0)):
+            last_final={"id":meta.get("id"),"updated":meta.get("updated"),"status":meta.get("status"),"teams":meta.get("teams") or []}
+    unique_players=len(player_ids)+len(player_names)
+    collector=LAST.get("collector_stats") or {}
+    return {"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,
+            "coverage":{"stored_games":len(rows),"final_games":len(finals),"live_games":len(live),"teams_seen":len(teams),"unique_final_players":unique_players},
+            "collector":{"last_run":LAST.get("collector"),**collector,"errors":LAST.get("collector_errors") or []},
+            "last_final":last_final,"source":"ATLAS_POSTGRES_ARCHIVE+COLLECTOR_STATE","updated":int(time.time())}
+
+def game_quality(g):
+    if not g:return {"score":0,"label":"NO DATA","checks":{}}
+    checks={
+        "teams":len(g.get("teams") or [])==2,
+        "team_stats":bool(g.get("team_stats")),
+        "players":bool(g.get("players")),
+        "plays":bool(g.get("plays")),
+        "drives":bool(g.get("drives")),
+        "final":bool(g.get("completed") or str(g.get("state") or "").lower()=="post")
+    }
+    weights={"teams":20,"team_stats":20,"players":25,"plays":15,"drives":10,"final":10}
+    score=sum(weights[k] for k,v in checks.items() if v)
+    label="COMPLETE" if score>=90 else "STRONG" if score>=70 else "PARTIAL" if score>=40 else "LIMITED"
+    return {"score":score,"label":label,"checks":checks}
+
 def legacy_live():
     g=game(DEFAULT_GAME_ID);out={"game":{"status":g.get("status","Pregame"),"detScore":0,"bufScore":0,"period":g.get("period",0),"clock":g.get("clock","—"),"possession":"—","downDistance":"—","ballSpot":"—"},"plays":g.get("plays",[])[-24:],"team_stats":g.get("team_stats",{}),"players":g.get("players",[]),"linescores":{"DET":g.get("linescores",{}).get("DET",[]),"BUF":g.get("linescores",{}).get("BUF",[])},"drives":g.get("drives",[])[-8:]}
     for t in g.get("teams",[]):
@@ -1079,6 +1129,10 @@ class H(SimpleHTTPRequestHandler):
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
             return self.sendj(game(gid))
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
+        if u.path=="/api/atlas":return self.sendj(atlas_overview())
+        if u.path=="/api/quality":
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
+            return self.sendj({"id":gid,**game_quality(STORE.game(gid) or game(gid))})
         if u.path in ["/api/history","/api/snapshots"]:
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
@@ -1103,7 +1157,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"11.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

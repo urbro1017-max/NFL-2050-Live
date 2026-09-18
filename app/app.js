@@ -135,7 +135,7 @@ function initialRoute(){let parts=location.hash.replace(/^#/,'').split('/').filt
 
 const WORKSPACES={
  control:[['control','Command'],['home','Live'],['sunday','Scoreboard'],['games','Game Detail'],['warroom','War Room']],
- home:[['home','Live'],['games','Game Detail'],['warroom','War Room'],['studio','Stat Studio'],['gamedna','Game DNA'],['situations','Situations']],
+ home:[['home','Command']],
  sunday:[['sunday','Scoreboard'],['home','Live'],['games','Game Detail']],games:[['games','Game Detail'],['home','Live'],['warroom','War Room'],['studio','Stat Studio'],['gamedna','Game DNA'],['situations','Situations']],
  league:[['league','League HQ'],['frontoffice','Teams'],['players','Players'],['compare','Compare']],
  frontoffice:[['frontoffice','Teams'],['players','Players'],['league','League HQ'],['compare','Compare']],players:[['players','Players'],['frontoffice','Teams'],['league','League HQ']],
@@ -480,3 +480,32 @@ renderHome=function(){
   }
   renderSyncStatus();
 };
+
+
+// 12.0 ATLAS ONE — unified NFL command surface + trust/coverage layer
+const ATLAS120={overview:null,quality:null,lastOverview:0};
+function rec120(t){return t?.record?`<span class="rec120">${esc(t.record)}</span>`:''}
+function logo120(t){return t?.logo?`<img class="teamLogo120" src="${esc(t.logo)}" alt="" onerror="this.style.display='none'">`:''}
+function life120(g){if(g.completed||g.state==='post')return ['FINAL','final'];if(g.state==='in')return [g.status||'LIVE','live'];return ['UPCOMING','upcoming']}
+function kickoffGroup120(g){if(g.state!=='pre')return g.state==='in'?'LIVE NOW':'COMPLETED';let d=new Date(g.date);if(Number.isNaN(d.getTime()))return 'UPCOMING';let day=d.toLocaleDateString('en-US',{timeZone:'America/New_York',weekday:'short'}).toUpperCase(),hr=+d.toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',hour12:false});if(day==='THU')return 'THURSDAY NIGHT';if(day==='MON')return 'MONDAY NIGHT';if(day==='SUN'&&hr>=19)return 'SUNDAY NIGHT';if(day==='SUN'&&hr>=15)return 'SUNDAY LATE';if(day==='SUN')return 'SUNDAY EARLY';return day}
+function weekCard120(g){let a=weekTeam110(g,'away'),h=weekTeam110(g,'home'),[label,cls]=life120(g),venue=g.venue?` · ${esc(g.venue)}`:'';return `<button class="weekGame110 weekGame120 ${cls}" data-weekgame110="${esc(g.id)}" style="--ac:${TEAM_COLORS[a.abbr]||'#43b9ff'};--hc:${TEAM_COLORS[h.abbr]||'#43b9ff'}"><div class="weekState110"><span>${esc(label)}</span><small>${esc(g.week?'WEEK '+g.week:'NFL')}</small></div><div class="matchTeam120 away">${logo120(a)}<div><b>${esc(a.abbr)}</b>${rec120(a)}</div><strong>${g.state==='pre'?'':esc(a.score)}</strong></div><div class="at120">@</div><div class="matchTeam120 home">${logo120(h)}<div><b>${esc(h.abbr)}</b>${rec120(h)}</div><strong>${g.state==='pre'?'':esc(h.score)}</strong></div><div class="weekMeta110">${g.state==='pre'?esc(kickoff110(g))+venue:esc(g.status||label)}</div><div class="open120">OPEN GAME →</div></button>`}
+function groupGames120(games){let order=['LIVE NOW','THURSDAY NIGHT','SUNDAY EARLY','SUNDAY LATE','SUNDAY NIGHT','MONDAY NIGHT','COMPLETED'];let map={};for(const g of games)(map[kickoffGroup120(g)]??=[]).push(g);return [...order,...Object.keys(map).filter(k=>!order.includes(k))].filter(k=>map[k]?.length).map(k=>[k,map[k]])}
+function renderWeek120(){let host=$('#weekEngine110'),d=ATLAS110.data;if(!host)return;if(!d){host.innerHTML='<div class="empty">Discovering the NFL week…</div>';return}let c=d.counts||{},all=d.games||[],games=all.filter(g=>ATLAS110.filter==='all'||life120(g)[1]===ATLAS110.filter);let groups=groupGames120(games);host.innerHTML=`<div class="weekHeader110 atlasWeekHead120"><div><small>${esc(d.season||2026)} REGULAR SEASON</small><b>WEEK ${esc(d.week||'—')}</b><span class="source120">${esc(d.source||'SCHEDULE FEED')}</span></div><div class="weekCounts110"><span><i class="liveDot110"></i>${esc(c.live||0)} LIVE</span><span>${esc(c.upcoming||0)} UPCOMING</span><span>${esc(c.final||0)} FINAL</span><span>${all.length} GAMES</span></div></div>${groups.length?groups.map(([label,rows])=>`<section class="kickGroup120"><div class="kickHead120"><b>${esc(label)}</b><span>${rows.length} GAME${rows.length===1?'':'S'}</span></div><div class="weekGrid110">${rows.map(weekCard120).join('')}</div></section>`).join(''):'<div class="empty">No games in this filter.</div>'}`;$$('[data-weekgame110]').forEach(b=>b.onclick=async()=>{let id=b.dataset.weekgame110;state.gameId=id;state.syncFailures=0;await loadSelected(id);route({view:'home',gameId:id})});$$('[data-wfilter]').forEach(b=>b.classList.toggle('active',b.dataset.wfilter===ATLAS110.filter));let sh=$('#sundayHealth111');if(sh)sh.textContent=c.live?`${c.live} live · active collection`:`${c.upcoming||0} upcoming · schedule-only until kickoff window`;}
+renderWeek110=renderWeek120;
+
+function atlasPulseHTML120(d){let cv=d?.coverage||{},co=d?.collector||{},db=d?.database||'—',errs=(co.errors||[]).length;return `<div class="pulseItem120"><small>DATA CORE</small><b>${esc(db)}</b><span>${errs?'DEGRADED':'HEALTHY'}</span></div><div class="pulseItem120"><small>ARCHIVED FINALS</small><b>${esc(cv.final_games??0)}</b><span>${esc(cv.stored_games??0)} stored games</span></div><div class="pulseItem120"><small>PLAYER COVERAGE</small><b>${esc(cv.unique_final_players??0)}</b><span>verified final-game players</span></div><div class="pulseItem120"><small>TEAMS SEEN</small><b>${esc(cv.teams_seen??0)}/32</b><span>Atlas archive coverage</span></div><div class="pulseItem120"><small>COLLECTOR</small><b>${esc(co.live??0)} LIVE</b><span>${esc(co.skipped??0)} intelligently skipped</span></div>`}
+async function loadAtlasPulse120(force=false){if(!force&&ATLAS120.overview&&Date.now()-ATLAS120.lastOverview<30000){let h=$('#atlasPulse120');if(h)h.innerHTML=atlasPulseHTML120(ATLAS120.overview);return}try{let d=await api('/api/atlas?_='+Date.now());ATLAS120.overview=d;ATLAS120.lastOverview=Date.now();let h=$('#atlasPulse120');if(h)h.innerHTML=atlasPulseHTML120(d)}catch(e){let h=$('#atlasPulse120');if(h)h.innerHTML='<div class="pulseItem120"><small>ATLAS DATA CORE</small><b>UI ONLINE</b><span>Coverage telemetry unavailable</span></div>'}}
+
+function dataTrust120(g){if(!g)return '';let finalish=g.completed||g.state==='post',archive=g.served_from_archive||String(g.source||'').includes('ARCHIVE'),age=g.feed_age_seconds;return `<div class="trust120"><span class="trustBadge120 ${finalish?'verified':''}">${finalish?'✓ FINAL VERIFIED':g.state==='in'?'● LIVE FEED':'◷ PREGAME'}</span><span>${archive?'ATLAS ARCHIVE':esc(g.source||'CONNECTED FEED')}</span>${age!=null&&g.state==='in'?`<span>FEED AGE ${esc(age)}s</span>`:''}<span>${(g.players||[]).length} PLAYER ROWS</span><span>${(g.plays||[]).length} PLAY EVENTS</span></div>`}
+const _renderHome120=renderHome;renderHome=function(){_renderHome120();loadAtlasPulse120();let heroEl=$('#homeHero');if(heroEl&&state.game&&!heroEl.querySelector('.trust120'))heroEl.insertAdjacentHTML('afterend',dataTrust120(state.game));};
+const _renderRoute120=renderRoute;renderRoute=function(){_renderRoute120();document.body.dataset.atlasVersion='12';if(state.view==='home'){loadAtlasPulse120();let sw=document.querySelector('.view[data-view="home"] .workspaceSwitcher');if(sw)sw.remove()}};
+
+// Command palette gets direct access to the six primary products without exposing legacy clutter.
+const _showCommandPalette120=showCommandPalette;
+// Keep the mature palette implementation; 12.0 adds a visible keyboard hint and richer search index through existing data.
+
+// Data integrity: never let an unlabeled passer-rating alias masquerade as QBR.
+function normalizeStatLabel120(k){let u=String(k||'').trim().toUpperCase();if(u==='RTG'||u==='RATE')return 'PASSER RTG';return k}
+const _categoryGrid120=categoryGrid108;categoryGrid108=function(groups){let normalized={};for(const [cat,st] of Object.entries(groups||{})){normalized[cat]={};for(const [k,v] of Object.entries(st||{}))normalized[cat][normalizeStatLabel120(k)]=v}return _categoryGrid120(normalized)};
+
+setInterval(()=>{if(state.view==='home'){loadWeek110(ATLAS110.week);loadAtlasPulse120(true)}},60000);

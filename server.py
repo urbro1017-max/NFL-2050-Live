@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="12.2"
-BUILD_NAME="ATLAS ARCHIVE ENGINE"
+VERSION="12.3"
+BUILD_NAME="ATLAS ARCHIVE INTELLIGENCE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -52,7 +52,7 @@ def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.2)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.3)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
@@ -1194,6 +1194,55 @@ def backfill_once(force=False):
         LAST["backfill"]=int(time.time()); LAST["backfill_stats"]=stats; LAST["backfill_errors"]=errors[-5:]
         return stats
 
+
+def archive_intelligence():
+    """Read-only analytics over Atlas-owned final-game archives. Collector behavior is untouched."""
+    games=[]; players={}; teams={}; total_plays=0; total_drives=0
+    for meta in STORE.games():
+        g=STORE.game(str(meta.get("id"))) or {}
+        if not _is_final_game(g): continue
+        ts=g.get("teams") or []
+        row={"id":str(g.get("id") or meta.get("id")),"date":g.get("date"),"status":g.get("status"),
+             "teams":[{"abbr":t.get("abbr"),"name":t.get("name"),"side":t.get("side"),"score":t.get("score"),"logo":t.get("logo")} for t in ts],
+             "players":len(g.get("players") or []),"plays":len(g.get("plays") or []),"drives":len(g.get("drives") or []),
+             "quality":game_quality(g)}
+        games.append(row); total_plays+=row["plays"]; total_drives+=row["drives"]
+        for t in ts:
+            ab=t.get("abbr")
+            if not ab: continue
+            x=teams.setdefault(ab,{"abbr":ab,"games":0,"points":0,"points_allowed":0,"wins":0,"losses":0})
+            x["games"]+=1
+            try: x["points"]+=int(t.get("score") or 0)
+            except: pass
+            opp=next((z for z in ts if z is not t),None)
+            if opp:
+                try:
+                    a=int(t.get("score") or 0); b=int(opp.get("score") or 0); x["points_allowed"]+=b
+                    if a>b:x["wins"]+=1
+                    elif a<b:x["losses"]+=1
+                except: pass
+        for pr in g.get("players") or []:
+            key=str(pr.get("id") or (pr.get("name"),pr.get("team")))
+            x=players.setdefault(key,{"id":pr.get("id"),"name":pr.get("name"),"team":pr.get("team"),"position":pr.get("position"),"games":set(),"categories":{}})
+            x["games"].add(row["id"]); cat=str(pr.get("category") or "Other")
+            dst=x["categories"].setdefault(cat,{})
+            for k,v in (pr.get("stats") or {}).items():
+                # Keep raw per-game values available to the client; aggregate only unambiguous counting labels.
+                u=str(k).upper().strip(); raw=str(v).replace(',','').replace('%','')
+                if any(bad in u for bad in ("AVG","RATE","RTG","QBR","PCT","LONG","LNG","Y/A","Y/C","C/ATT")): continue
+                try:n=float(raw)
+                except:continue
+                dst[k]=dst.get(k,0)+n
+    plist=[]
+    for x in players.values():
+        x=dict(x); x["games"]=len(x["games"]); plist.append(x)
+    tlist=list(teams.values())
+    for x in tlist:
+        n=max(1,x["games"]); x["ppg"]=round(x["points"]/n,1); x["papg"]=round(x["points_allowed"]/n,1); x["diff_per_game"]=round((x["points"]-x["points_allowed"])/n,1)
+    games.sort(key=lambda x:str(x.get("date") or ""),reverse=True)
+    return {"ok":True,"version":VERSION,"sample":{"final_games":len(games),"players":len(plist),"teams":len(tlist),"plays":total_plays,"drives":total_drives},
+            "games":games,"players":plist,"teams":tlist,"source":"ATLAS_FINAL_ARCHIVE_READ_ONLY","updated":int(time.time())}
+
 def legacy_live():
     g=game(DEFAULT_GAME_ID);out={"game":{"status":g.get("status","Pregame"),"detScore":0,"bufScore":0,"period":g.get("period",0),"clock":g.get("clock","—"),"possession":"—","downDistance":"—","ballSpot":"—"},"plays":g.get("plays",[])[-24:],"team_stats":g.get("team_stats",{}),"players":g.get("players",[]),"linescores":{"DET":g.get("linescores",{}).get("DET",[]),"BUF":g.get("linescores",{}).get("BUF",[])},"drives":g.get("drives",[])[-8:]}
     for t in g.get("teams",[]):
@@ -1227,6 +1276,7 @@ class H(SimpleHTTPRequestHandler):
             return self.sendj(game(gid))
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
+        if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
         if u.path=="/api/archive-coverage":
             try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)

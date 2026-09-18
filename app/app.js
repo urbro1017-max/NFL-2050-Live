@@ -316,3 +316,21 @@ renderRoute=function(){_renderRoute104();wireUnified104();document.body.dataset.
 const _renderTeamUniverse104=renderTeamUniverse10;
 renderTeamUniverse10=function(d=leagueData){_renderTeamUniverse104(d);wireUnified104();let host=document.querySelector('#teamUniverseBody');if(!host)return;let stat=host.querySelector('.seasonTeamStats103'), roster=host.querySelector('.primeUniverseRoster');if(stat)stat.classList.add('unifiedPriority');if(roster)roster.classList.add('unifiedSecondary');};
 wireUnified104();
+
+
+/* ===== 10.5 POLISH + DATA CORE ===== */
+const ATLAS105={version:'10.5'};
+function isFinal105(g){return /final|complete|closed/i.test(String(g?.status||'')) || String(g?.state||'').toLowerCase()==='post'}
+function finalMetric105(g,label,...aliases){let a=team(g,'away'),h=team(g,'home');return `<div class="finalMetric105"><small>${esc(label)}</small><div><b style="color:var(--away)">${esc(getStat(g,a.abbr,...aliases))}</b><span>${esc(a.abbr)}</span><i>vs</i><span>${esc(h.abbr)}</span><b style="color:var(--home)">${esc(getStat(g,h.abbr,...aliases))}</b></div></div>`}
+const _renderHome105=renderHome;
+renderHome=function(){
+  _renderHome105();let g=state.game;if(!g)return;
+  const fin=isFinal105(g), k=$('#homeKpis'), drive=$('#homeDrive');
+  if(fin&&k){k.innerHTML=[['Total yards','Total Yards'],['Passing','Passing'],['Rushing','Rushing'],['Turnovers','Turnovers']].map(([l,key])=>{let a=team(g,'away'),h=team(g,'home');return `<div class="kpi finalKpi105"><small>${esc(l)}</small><strong><span style="color:var(--away)">${esc(getStat(g,a.abbr,key))}</span><i> / </i><span style="color:var(--home)">${esc(getStat(g,h.abbr,key))}</span></strong><em>${esc(a.abbr)} / ${esc(h.abbr)}</em></div>`}).join('')}
+  if(fin&&drive){let d=g.drives?.at(-1);drive.innerHTML=d?`<div class="finalDrive105"><small>FINAL POSSESSION · ${esc(d.team||'—')}</small><b>${esc(d.result||'End of game')}</b><span>${esc(d.yards??'—')} yards · ${esc(d.plays??'—')} plays · ${esc(d.time??'—')}</span></div>`:'<div class="empty">Final possession unavailable.</div>'}
+  const heads=$$('.cardHead b');heads.forEach(x=>{if(fin&&x.textContent.trim()==='CURRENT DRIVE')x.textContent='FINAL POSSESSION'});
+};
+const _overview105=overview;
+overview=function(g){if(!isFinal105(g))return _overview105(g);let a=team(g,'away'),h=team(g,'home'),p=g.plays?.at(-1),d=g.drives?.at(-1);return `<div class="finalSummary105"><div><small>FINAL</small><b>${esc(a.abbr)} ${esc(a.score)} — ${esc(h.score)} ${esc(h.abbr)}</b><span>Verified final game summary</span></div></div><div class="finalMetricsGrid105">${finalMetric105(g,'Total yards','Total Yards')}${finalMetric105(g,'Passing','Passing')}${finalMetric105(g,'Rushing','Rushing')}${finalMetric105(g,'First downs','1st Downs')}${finalMetric105(g,'Turnovers','Turnovers')}${finalMetric105(g,'3rd down','3rd down efficiency')}</div><div class="grid g2 glanceGrid"><div class="card"><div class="cardHead"><b>Final possession</b></div><div class="cardBody bigEvent">${d?`<small>${esc(d.team||'—')}</small><strong>${esc(d.result||'End of game')}</strong><span>${esc(d.yards??'—')} yards · ${esc(d.plays??'—')} plays · ${esc(d.time??'—')}</span>`:'<div class="empty">Final possession unavailable.</div>'}</div></div><div class="card"><div class="cardHead"><b>Final event</b></div><div class="cardBody bigEvent">${p?`<small>Q${esc(p.period)} · ${esc(p.clock)}</small><strong>${esc(p.text)}</strong>`:'<div class="empty">Final event unavailable.</div>'}</div></div></div><div class="grid g2 glanceGrid"><div class="card"><div class="cardHead"><b>Score flow</b></div><div class="cardBody chart">${scoreChart(g)}</div></div><div class="card"><div class="cardHead"><b>Top performers</b></div><div class="cardBody grid">${[pickCategoryLeader(g,'passing','YDS'),pickCategoryLeader(g,'rushing','YDS'),pickCategoryLeader(g,'receiving','YDS')].filter(Boolean).map(leaderHtml).join('')}</div></div></div>`}
+// Make game entities drillable without adding more navigation chrome.
+document.addEventListener('click',e=>{let t=e.target.closest('.score .team');if(t&&state.game){let ab=t.classList.contains('right')?team(state.game,'home').abbr:team(state.game,'away').abbr;ATLAS10.team=ab;route({view:'teams10'})}});

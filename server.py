@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="17.0"
-BUILD_NAME="ATLAS NEON DATA FUSION"
+VERSION="17.1"
+BUILD_NAME="ATLAS SIGNAL CORE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -768,12 +768,20 @@ def player_index():
     return sorted(out.values(),key=lambda x:(x.get("team") or "",0 if x.get("starter") else 1,x.get("position") or "",x.get("name") or ""))
 
 def team_index():
-    out={}
+    # Always return the full 32-team directory. Archived/live data enriches it;
+    # a temporary provider outage must not make the Teams screen empty.
+    names={"ARI":"Arizona Cardinals","ATL":"Atlanta Falcons","BAL":"Baltimore Ravens","BUF":"Buffalo Bills","CAR":"Carolina Panthers","CHI":"Chicago Bears","CIN":"Cincinnati Bengals","CLE":"Cleveland Browns","DAL":"Dallas Cowboys","DEN":"Denver Broncos","DET":"Detroit Lions","GB":"Green Bay Packers","HOU":"Houston Texans","IND":"Indianapolis Colts","JAX":"Jacksonville Jaguars","KC":"Kansas City Chiefs","LV":"Las Vegas Raiders","LAC":"Los Angeles Chargers","LA":"Los Angeles Rams","MIA":"Miami Dolphins","MIN":"Minnesota Vikings","NE":"New England Patriots","NO":"New Orleans Saints","NYG":"New York Giants","NYJ":"New York Jets","PHI":"Philadelphia Eagles","PIT":"Pittsburgh Steelers","SF":"San Francisco 49ers","SEA":"Seattle Seahawks","TB":"Tampa Bay Buccaneers","TEN":"Tennessee Titans","WAS":"Washington Commanders"}
+    logo_ab={"LA":"lar","WAS":"wsh"}
+    out={ab:{"abbr":ab,"name":names[ab],"logo":f"https://a.espncdn.com/i/teamlogos/nfl/500/{logo_ab.get(ab,ab.lower())}.png","games":[],"source":"ATLAS_TEAM_DIRECTORY"} for ab in TEAM_IDS}
     for gm in STORE.games():
         g=STORE.game(gm["id"]) or {}
         for t in g.get("teams",[]):
-            ab=t.get("abbr");out.setdefault(ab,{"abbr":ab,"name":t.get("name"),"logo":_team_logo(t),"games":[]});out[ab]["games"].append({"game_id":g["id"],"status":g.get("status"),"score":t.get("score"),"team_stats":g.get("team_stats",{}).get(ab,{})})
-    return list(out.values())
+            ab=t.get("abbr")
+            if not ab: continue
+            row=out.setdefault(ab,{"abbr":ab,"name":t.get("name") or ab,"logo":_team_logo(t),"games":[],"source":"ARCHIVE"})
+            row["name"]=t.get("name") or row.get("name"); row["logo"]=_team_logo(t) or row.get("logo")
+            row["games"].append({"game_id":g["id"],"status":g.get("status"),"score":t.get("score"),"team_stats":g.get("team_stats",{}).get(ab,{})})
+    return sorted(out.values(),key=lambda x:x.get("abbr") or "")
 
 
 LEAGUE_CACHE={"ts":0,"value":None}
@@ -1242,6 +1250,51 @@ def archive_intelligence():
     games.sort(key=lambda x:str(x.get("date") or ""),reverse=True)
     return {"ok":True,"version":VERSION,"sample":{"final_games":len(games),"players":len(plist),"teams":len(tlist),"plays":total_plays,"drives":total_drives},
             "games":games,"players":plist,"teams":tlist,"source":"ATLAS_FINAL_ARCHIVE_READ_ONLY","updated":int(time.time())}
+
+
+SOURCE_HEALTH_CACHE={"ts":0,"value":None}
+SOURCE_HEALTH_LOCK=threading.Lock()
+
+def _probe_url(url, label, kind, role):
+    started=time.time()
+    try:
+        req=Request(url,headers={"User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/17.1)","Accept":"application/json,text/html,*/*"})
+        with urlopen(req,timeout=7) as r:
+            code=getattr(r,"status",200); r.read(256)
+        return {"name":label,"kind":kind,"role":role,"ok":200<=code<400,"status":str(code),"latency_ms":round((time.time()-started)*1000)}
+    except Exception as e:
+        return {"name":label,"kind":kind,"role":role,"ok":False,"status":type(e).__name__,"latency_ms":round((time.time()-started)*1000)}
+
+def _internal_diagnostics():
+    checks=[]
+    def run(name,fn,detail):
+        try:
+            v=fn(); ok=bool(v)
+            checks.append({"name":name,"ok":ok,"detail":detail(v) if callable(detail) else detail})
+        except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
+    run("Database store",lambda:STORE.kind,lambda v:str(v))
+    run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'app.js').exists() and (ROOT/'styles.css').exists(),"Core UI assets present")
+    run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
+    run("Collector state",lambda:LAST is not None,"Collector state object available")
+    return checks
+
+def source_health(force=False):
+    now=time.time()
+    with SOURCE_HEALTH_LOCK:
+        if not force and SOURCE_HEALTH_CACHE["value"] and now-SOURCE_HEALTH_CACHE["ts"]<60:return SOURCE_HEALTH_CACHE["value"]
+    probes=[
+      ("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard","ESPN Scoreboard","live feed","Scores · schedule · game state"),
+      ("https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season=2026","ESPN Standings","season feed","Standings and records"),
+      ("https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams","ESPN Teams","identity feed","Teams and public metadata"),
+      ("https://www.nfl.com/stats/","NFL Stats","official reference","Official statistics cross-check"),
+      ("https://operations.nfl.com/gameday/technology/nfl-next-gen-stats/","NFL Next Gen Stats","ngs reference","Official NGS methodology reference"),
+      ("https://aws.amazon.com/sports/nfl/","AWS × NFL","ngs infrastructure","Infrastructure reference; not a raw stats API"),
+    ]
+    with ThreadPoolExecutor(max_workers=6) as ex: sources=list(ex.map(lambda p:_probe_url(*p),probes))
+    value={"ok":True,"sources":sources,"diagnostics":_internal_diagnostics(),"ngs_mode":"SOURCE-GATED","ngs_raw_feed":False,"updated":int(time.time())}
+    with SOURCE_HEALTH_LOCK: SOURCE_HEALTH_CACHE.update(ts=time.time(),value=value)
+    return value
 
 def legacy_live():
     g=game(DEFAULT_GAME_ID);out={"game":{"status":g.get("status","Pregame"),"detScore":0,"bufScore":0,"period":g.get("period",0),"clock":g.get("clock","—"),"possession":"—","downDistance":"—","ballSpot":"—"},"plays":g.get("plays",[])[-24:],"team_stats":g.get("team_stats",{}),"players":g.get("players",[]),"linescores":{"DET":g.get("linescores",{}).get("DET",[]),"BUF":g.get("linescores",{}).get("BUF",[])},"drives":g.get("drives",[])[-8:]}

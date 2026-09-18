@@ -10,7 +10,7 @@ function applyTeamTheme(g){if(!g)return;let a=team(g,'away').abbr,h=team(g,'home
 function pctValue(v){let m=String(v??'').match(/([0-9.]+)%/);return m?Math.max(0,Math.min(100,+m[1])):null}
 function compareMetric(g,label,key,...aliases){let a=team(g,'away'),h=team(g,'home'),av=getStat(g,a.abbr,key,...aliases),hv=getStat(g,h.abbr,key,...aliases),an=num(av),hn=num(hv),ap=pctValue(av),hp=pctValue(hv),max=Math.max(an||0,hn||0,1);let aw=ap??(an===null?8:Math.max(8,an/max*100)),hw=hp??(hn===null?8:Math.max(8,hn/max*100));return `<div class="compareRow"><div class="compareLabel">${esc(label)}</div><div class="compareValues"><strong style="color:var(--away)">${esc(av)}</strong><span>${esc(a.abbr)}</span><span class="vs">VS</span><span>${esc(h.abbr)}</span><strong style="color:var(--home)">${esc(hv)}</strong></div><div class="compareBars"><i class="awayBar" style="width:${aw}%"></i><i class="homeBar" style="width:${hw}%"></i></div></div>`}
 
-const VALID_VIEWS=new Set(['home','games','players','analytics','league','warroom','frontoffice','filmroom','compare','control','sunday','studio','gamedna','situations','dashboard','archive','about','teams10','lab10','intelligence','gm15']);
+const VALID_VIEWS=new Set(['home','games','players','analytics','league','warroom','frontoffice','filmroom','compare','control','sunday','studio','gamedna','situations','dashboard','archive','about','teams10','lab10','intelligence','gm15','network17']);
 const VALID_GAME_TABS=new Set(['overview','team','players','plays','drives']);
 const validGameId=v=>v==null||/^\d{6,20}$/.test(String(v));
 function route(next,push=true){saveScroll();let view=VALID_VIEWS.has(next.view)?next.view:(VALID_VIEWS.has(state.view)?state.view:'home');let tab=VALID_GAME_TABS.has(next.tab)?next.tab:(VALID_GAME_TABS.has(state.tab)?state.tab:'overview');let candidate=next.gameId??state.gameId,gameId=validGameId(candidate)?candidate:null;let entry={view,tab,gameId,date:next.date||state.date,scrollY:0};if(push){history.pushState(entry,'',`#${entry.view}/${entry.tab}${entry.gameId?'/'+entry.gameId:''}`)}Object.assign(state,entry);renderRoute();}
@@ -20,7 +20,7 @@ window.addEventListener('scroll',()=>{clearTimeout(window._st);window._st=setTim
 function renderRoute(){
   $$('.view').forEach(x=>x.classList.toggle('active',x.dataset.view===state.view));
   $$('#mainNav button').forEach(x=>x.classList.toggle('active',x.dataset.view===state.view));
-  $('#topTitle').textContent=({home:'LIVE GAME',games:'NFL GAMES',players:'PLAYERS',analytics:'ANALYZE',league:'LEAGUE',warroom:'WAR ROOM',frontoffice:'TEAM TOOLS',filmroom:'FILM ROOM',compare:'COMPARE',control:'COMMAND',sunday:'SCOREBOARD',studio:'STAT STUDIO',gamedna:'GAME DNA',situations:'SITUATION LAB',dashboard:'MY ATLAS',archive:'ARCHIVE',about:'ABOUT',teams10:'TEAMS',lab10:'LAB',intelligence:'INTELLIGENCE',gm15:'GM LAB'})[state.view]||'GRIDIRON ATLAS';
+  $('#topTitle').textContent=({home:'LIVE GAME',games:'NFL GAMES',players:'PLAYERS',analytics:'ANALYZE',league:'LEAGUE',warroom:'WAR ROOM',frontoffice:'TEAM TOOLS',filmroom:'FILM ROOM',compare:'COMPARE',control:'COMMAND',sunday:'SCOREBOARD',studio:'STAT STUDIO',gamedna:'GAME DNA',situations:'SITUATION LAB',dashboard:'MY ATLAS',archive:'ARCHIVE',about:'ABOUT',teams10:'TEAMS',lab10:'LAB',intelligence:'INTELLIGENCE',gm15:'GM LAB',network17:'DATA HEALTH'})[state.view]||'GRIDIRON ATLAS';
   $('#backBtn').disabled=history.length<=1;
   if(state.view==='games')loadGames();
   if(state.view==='players')loadPlayerDb();
@@ -41,6 +41,7 @@ function renderRoute(){
   if(state.view==='lab10')renderLab10();
   if(state.view==='intelligence')renderIntelligence130();
   if(state.view==='gm15')loadGM150();
+  if(state.view==='network17')loadNetwork17(false);
   atlasRender80();
   renderAtlasTicker();
   renderUnifiedSwitcher();
@@ -580,7 +581,8 @@ function gamePicker142(kind='intelligence'){
   return `<div class="emptyExperience142"><header><div class="orb142">${kind==='lab'?'⌁':'✦'}</div><small class="eyebrow">${kind==='lab'?'RESEARCH WORKSPACE':'INTELLIGENCE ENGINE'}</small><h3>Choose a game to begin.</h3><p>${kind==='lab'?'Open a captured game and ATLAS will turn its plays, drives and situations into a research workspace.':'Select a recent, live or upcoming matchup and ATLAS will assemble the intelligence workspace from available football data.'}</p></header><div class="gamePicker142">${games.length?games.map(g=>{let a=(g.teams||[]).find(t=>t.side==='away')||(g.teams||[])[0]||{},h=(g.teams||[]).find(t=>t.side==='home')||(g.teams||[])[1]||{};return `<button class="gamePick142" data-pick142="${esc(g.id)}"><small>${esc(g.status||g.state||'NFL GAME')}</small><b>${esc(a.abbr||'AWAY')} ${g.state==='pre'?'':esc(a.score??'')} <i>@</i> ${esc(h.abbr||'HOME')} ${g.state==='pre'?'':esc(h.score??'')}</b><span>${g.date?esc(kickoff110(g)):'Open matchup'} →</span></button>`}).join(''):'<div class="empty">No game cards are loaded yet. Open Live to load the current NFL slate.</div>'}</div><div class="emptyCapabilities142">${caps.map(x=>`<div><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}</div></div>`;
 }
 function wirePicker142(){document.querySelectorAll('[data-pick142]').forEach(b=>b.onclick=async()=>{await loadSelected(b.dataset.pick142);if(state.view==='intelligence')renderIntelligence130();
-  if(state.view==='gm15')loadGM150();if(state.view==='lab10')renderLab10()})}
+  if(state.view==='gm15')loadGM150();
+  if(state.view==='network17')loadNetwork17(false);if(state.view==='lab10')renderLab10()})}
 const _intel142=renderIntelligence130;renderIntelligence130=function(){let b=$('#intelBody130');if(b&&!state.game){b.innerHTML=gamePicker142('intelligence');wirePicker142();return}_intel142()};
 const _lab142=renderLab10;renderLab10=function(){let b=$('#lab10Body');if(b&&!state.game){b.innerHTML=gamePicker142('lab');wirePicker142();return}_lab142()};
 
@@ -691,11 +693,32 @@ function wire165(){gmWireAll151();document.querySelectorAll('[data-gmtabgo165]')
 document.querySelectorAll('[data-gmtab150]').forEach(x=>x.onclick=async()=>{GM150.tab=x.dataset.gmtab150;if(['matrix','shortlist','warroom','board','comparex'].includes(GM150.tab)&&(!GM150.allRosters||Object.keys(GM150.allRosters).length<32))await gmLoadAll151();renderGM150()});
 
 
+
+function installMoreTools171(){let bar=document.querySelector('.gmToolbar150');if(!bar||bar.querySelector('#gmMore171'))return;let s=document.createElement('select');s.id='gmMore171';s.innerHTML='<option value="">More tools…</option><option value="matrix">Personnel Matrix</option><option value="shortlist">Shortlist</option><option value="sandbox">Roster Sandbox</option><option value="warroom">War Room</option><option value="board">Big Board</option><option value="comparex">Compare Lab</option><option value="journal">GM Journal</option>';bar.appendChild(s);s.onchange=async()=>{if(!s.value)return;GM150.tab=s.value;if(['matrix','shortlist','warroom','board','comparex'].includes(GM150.tab)&&(!GM150.allRosters||Object.keys(GM150.allRosters).length<32))await gmLoadAll151();renderGM150();s.value=''}}
+
 // ATLAS 17.0 — Neon Data Fusion / source observability
 const ATLAS17={sources:null};
 function spark17(vals,cls=''){let v=vals.filter(x=>Number.isFinite(+x)).map(Number);if(v.length<2)v=[2,5,3,7,6,9];let lo=Math.min(...v),hi=Math.max(...v),rng=hi-lo||1;let pts=v.map((x,i)=>`${(i/(v.length-1))*100},${64-((x-lo)/rng)*54}`).join(' ');return `<svg class="miniChart17" viewBox="0 0 100 70" preserveAspectRatio="none"><polyline class="${cls}" points="${pts}"/></svg>`}
-async function loadNetwork17(force=false){let b=document.querySelector('#networkBody17');if(!b)return;b.innerHTML='<div class="skeleton121 tall"></div>';try{let d=await fetch('/api/sources'+(force?'?force=1':'')).then(r=>r.json());ATLAS17.sources=d;let rows=d.sources||[],up=rows.filter(x=>x.ok).length,ngs=rows.filter(x=>String(x.kind).includes('ngs')).length,lat=rows.filter(x=>x.latency_ms!=null).map(x=>x.latency_ms);b.innerHTML=`<div class="fusionKpis17"><div class="fusionKpi17"><small>SOURCES ONLINE</small><b>${up}/${rows.length}</b>${spark17(rows.map(x=>x.ok?10:2))}</div><div class="fusionKpi17"><small>MEDIAN LATENCY</small><b>${lat.length?Math.round(lat.sort((a,b)=>a-b)[Math.floor(lat.length/2)]):'—'} ms</b>${spark17(lat,'pink')}</div><div class="fusionKpi17"><small>NGS STATUS</small><b>${esc(d.ngs_mode||'SOURCE-GATED')}</b>${spark17([4,5,5,6,6,7],'lime')}</div><div class="fusionKpi17"><small>RAW NGS FEED</small><b>${d.ngs_raw_feed?'CONNECTED':'NOT CLAIMED'}</b>${spark17([6,6,6,6,6])}</div></div><div class="sourceGrid17">${rows.map(x=>`<div class="sourceCard17 ${x.ok?'ok':'down'}"><strong>${x.ok?'ONLINE':'CHECK'}</strong><small>${esc(x.kind||'SOURCE').toUpperCase()}</small><h3>${esc(x.name)}</h3><span>${esc(x.role||'')}</span><div class="sourceMeta17"><span>${x.status||'—'}</span><span>${x.latency_ms??'—'} ms</span></div></div>`).join('')}</div><div class="card" style="margin-top:12px"><div class="cardHead"><b>Data integrity contract</b><span class="badge">VERIFIED-FIRST</span></div><div class="cardBody"><p>ESPN public feeds power live and season data. NFL.com and NFL Football Operations are official cross-check/reference surfaces. AWS documents the infrastructure behind NGS; it is not treated as a public statistics API. Raw NGS tracking metrics stay unavailable unless a verified feed actually supplies them.</p></div></div>`}catch(e){b.innerHTML='<div class="empty">Source health check failed. ATLAS will keep using cached/available football data.</div>'}}
-function installNetwork17(){let nav=document.querySelector('.nav');if(nav&&!nav.querySelector('[data-route="network17"]')){let btn=document.createElement('button');btn.dataset.route='network17';btn.innerHTML='<span>◉</span>Data Network';nav.appendChild(btn)}let r=document.querySelector('#refreshSources17');if(r)r.onclick=()=>loadNetwork17(true)}
+async function loadNetwork17(force=false){
+ let b=document.querySelector('#networkBody17');if(!b)return;
+ b.innerHTML='<div class="diagLoading171">Running background diagnostics…</div>';
+ try{
+  let d=await api('/api/sources'+(force?'?force=1':''));ATLAS17.sources=d;
+  let rows=d.sources||[],up=rows.filter(x=>x.ok).length,checks=d.diagnostics||[],pass=checks.filter(x=>x.ok).length;
+  let lat=rows.filter(x=>x.latency_ms!=null).map(x=>x.latency_ms).sort((a,b)=>a-b),median=lat.length?Math.round(lat[Math.floor(lat.length/2)]):null;
+  const status=up===rows.length&&pass===checks.length?'HEALTHY':up>0?'DEGRADED':'OFFLINE';
+  b.innerHTML=`<div class="signalSummary171 ${status.toLowerCase()}">
+   <div><small>SYSTEM STATUS</small><strong>${status}</strong><span>${pass}/${checks.length} internal checks · ${up}/${rows.length} external sources</span></div>
+   <div class="signalMetric171"><small>MEDIAN SOURCE LATENCY</small><b>${median==null?'—':median+' ms'}</b></div>
+   <div class="signalMetric171"><small>LAST DIAGNOSTIC</small><b>${new Date((d.updated||Date.now()/1000)*1000).toLocaleTimeString()}</b></div>
+  </div>
+  <div class="diagGrid171">${checks.map(x=>`<article class="diag171 ${x.ok?'ok':'bad'}"><i></i><div><b>${esc(x.name)}</b><span>${esc(x.detail||'')}</span></div><strong>${x.ok?'PASS':'FAIL'}</strong></article>`).join('')}</div>
+  <div class="surfaceTitle171"><div><small>DATA SOURCES</small><h3>Provider health</h3></div><span>Only working links are treated as live data paths.</span></div>
+  <div class="sourceGrid17 compact171">${rows.map(x=>`<div class="sourceCard17 ${x.ok?'ok':'down'}"><strong>${x.ok?'ONLINE':'UNAVAILABLE'}</strong><small>${esc(x.kind||'SOURCE').toUpperCase()}</small><h3>${esc(x.name)}</h3><span>${esc(x.role||'')}</span><div class="sourceMeta17"><span>${esc(x.status||'—')}</span><span>${x.latency_ms==null?'—':x.latency_ms+' ms'}</span></div></div>`).join('')}</div>
+  <details class="dataPolicy171"><summary>Data provenance & NGS policy</summary><p>Live scores, schedules, rosters and public season statistics use reachable public feeds. NFL Next Gen Stats remains source-gated: ATLAS does not label estimates as NGS and does not claim a raw AWS/NGS connection without an authenticated feed.</p></details>`;
+ }catch(e){b.innerHTML=`<div class="diagFailure171"><b>Diagnostic endpoint failed</b><span>${esc(e.message||e)}</span><button onclick="loadNetwork17(true)">Retry</button></div>`}
+}
+function installNetwork17(){let r=document.querySelector('#refreshSources17');if(r)r.onclick=()=>loadNetwork17(true);installMoreTools171()}
 document.addEventListener('click',e=>{let b=e.target.closest('[data-route="network17"]');if(b)setTimeout(()=>loadNetwork17(false),30)});
-const _rr17=renderRoute;renderRoute=function(){_rr17();document.body.dataset.atlasVersion='17';document.title='ATLAS 17.0 — NEON DATA FUSION';installNetwork17();if((location.hash||'').includes('network17'))loadNetwork17(false)};
+const _rr17=renderRoute;renderRoute=function(){_rr17();document.body.dataset.atlasVersion='17';document.title='ATLAS 17.1 — SIGNAL CORE';installNetwork17();if((location.hash||'').includes('network17'))loadNetwork17(false)};
 setTimeout(installNetwork17,100);

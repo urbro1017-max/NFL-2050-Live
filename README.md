@@ -1,13 +1,5 @@
-# GRIDIRON ATLAS 8.0 — ATLAS ONE
+# GRIDIRON ATLAS 8.1 — UNIFIED
 
-Major UI and intelligence overhaul. Keeps the verified-data rule: unsupported values render as —.
+Consolidated navigation release. Keeps the full Atlas 8.0 information set while reducing the primary rail to four grouped areas: Command, League, Analyze, and More. Adds contextual workspace switchers, repairs 8.0 routes for Game DNA / Situation Lab / My Atlas, delegated dynamic navigation, and live refresh hooks across deeper game workspaces.
 
-## New in 8.0
-- Reorganized visual system and command bar
-- Game DNA forensic workspace
-- Situation Lab for red zone / third down / down splits
-- My Dashboard personalized board
-- Density modes and TV mode
-- Persistent top score ticker
-- Deeper drive and play visualizations
-- Existing Game Center, League HQ, Front Office, Film Room, Stat Studio, Sunday Board and analytics preserved
+Deploy the contents of this folder to the repository root. Keep existing Render environment variables and PostgreSQL configuration.

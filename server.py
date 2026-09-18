@@ -187,8 +187,7 @@ def scoreboard(date=None):
         return {"games":archived,"source":"ARCHIVE_FALLBACK","date":day,"event_count":len(archived)}
 
 def game(gid,save=True):
-    # CDN game package first. The site summary endpoint is retained only as a
-    # fallback because some server environments receive 403 from site.api.
+    # CDN game package first. Normalize ESPN's live package into one stable schema.
     try:
         raw=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_CDN_GAME")
         d=raw.get("gamepackageJSON",raw)
@@ -199,39 +198,93 @@ def game(gid,save=True):
             LAST["fallback"]="site summary"
         except Exception:
             return STORE.game(gid) or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
-    comp=((d.get("header") or {}).get("competitions") or [{}])[0];teams=[];lines={}
+
+    comp=((d.get("header") or {}).get("competitions") or [{}])[0]
+    teams=[]; lines={}; team_id_to_abbr={}
     for c in comp.get("competitors") or []:
-        t=c.get("team") or {};ab=(t.get("abbreviation") or "").upper();lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
+        t=c.get("team") or {}; ab=(t.get("abbreviation") or "").upper()
+        if t.get("id") is not None: team_id_to_abbr[str(t.get("id"))]=ab
+        lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
         teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
-    st=comp.get("status") or {};typ=st.get("type") or {}
+    st=comp.get("status") or {}; typ=st.get("type") or {}
     out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"scoring_plays":[],"linescores":lines,"source":PROVIDER,"fetched_at":int(time.time())}
+
     for t in ((d.get("boxscore") or {}).get("teams") or []):
-        ab=((t.get("team") or {}).get("abbreviation") or "").upper();out["team_stats"][ab]={str(x.get("label") or x.get("name")):x.get("displayValue") for x in t.get("statistics") or []}
+        ab=((t.get("team") or {}).get("abbreviation") or "").upper()
+        out["team_stats"][ab]={str(x.get("label") or x.get("name")):x.get("displayValue") for x in t.get("statistics") or []}
     for grp in ((d.get("boxscore") or {}).get("players") or []):
         ab=((grp.get("team") or {}).get("abbreviation") or "").upper()
         for cat in grp.get("statistics") or []:
-            labels=cat.get("labels") or [];cname=cat.get("name") or cat.get("label") or "stats"
+            labels=cat.get("labels") or []; cname=cat.get("name") or cat.get("label") or "stats"
             for row in cat.get("athletes") or []:
-                a=row.get("athlete") or {};out["players"].append({"id":a.get("id"),"team":ab,"name":a.get("displayName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,row.get("stats") or []))})
-    for p in (d.get("plays") or [])[-180:]:
-        out["plays"].append({"id":p.get("id"),"clock":(p.get("clock") or {}).get("displayValue"),"period":(p.get("period") or {}).get("number"),"text":p.get("text"),"team":((p.get("team") or {}).get("abbreviation")),"start":p.get("start"),"end":p.get("end"),"type":((p.get("type") or {}).get("text"))})
-    for sp in (d.get("scoringPlays") or []):
-        out["scoring_plays"].append({"id":sp.get("id"),"clock":(sp.get("clock") or {}).get("displayValue"),"period":(sp.get("period") or {}).get("number"),"text":sp.get("text"),"team":((sp.get("team") or {}).get("abbreviation")),"scoreValue":sp.get("scoreValue"),"awayScore":sp.get("awayScore"),"homeScore":sp.get("homeScore")})
+                a=row.get("athlete") or {}
+                out["players"].append({"id":a.get("id"),"team":ab,"name":a.get("displayName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,row.get("stats") or []))})
+
+    def play_team(p):
+        direct=((p.get("team") or {}).get("abbreviation"))
+        if direct: return direct.upper()
+        # CDN drive plays frequently omit play.team; teamParticipants identifies offense.
+        for tp in p.get("teamParticipants") or []:
+            if tp.get("type")=="offense":
+                ab=team_id_to_abbr.get(str(tp.get("id")))
+                if ab:return ab
+        # After a kickoff, end.team is the receiving/possessing team.
+        et=((p.get("end") or {}).get("team") or {}).get("id")
+        return team_id_to_abbr.get(str(et)) if et is not None else None
+
+    def norm_play(p):
+        return {"id":p.get("id"),"clock":(p.get("clock") or {}).get("displayValue"),"period":(p.get("period") or {}).get("number"),"text":p.get("text"),"team":play_team(p),"start":p.get("start"),"end":p.get("end"),"type":((p.get("type") or {}).get("text")),"statYardage":p.get("statYardage"),"scoringPlay":bool(p.get("scoringPlay")),"awayScore":p.get("awayScore"),"homeScore":p.get("homeScore")}
+
+    # ESPN CDN sometimes leaves top-level plays empty while embedding live plays in drives.
+    # Merge both sources, deduplicate by play id, then order by sequence/id.
+    play_map={}
+    for p in d.get("plays") or []:
+        if p.get("id"): play_map[str(p.get("id"))]=p
+
     drive_block=d.get("drives") or {}
     drive_rows=list(drive_block.get("previous") or [])
     current=drive_block.get("current")
     if isinstance(current,dict) and current.get("id") not in {x.get("id") for x in drive_rows}: drive_rows.append(current)
     for x in drive_rows:
-        out["drives"].append({"id":x.get("id"),"team":((x.get("team") or {}).get("abbreviation")) or "—","result":x.get("description") or x.get("displayResult") or x.get("result") or "Drive","yards":x.get("yards"),"time":x.get("timeElapsed"),"start":x.get("start"),"end":x.get("end"),"plays":x.get("offensivePlays") or x.get("plays")})
+        raw_plays=x.get("plays") or []
+        if isinstance(raw_plays,list):
+            for p in raw_plays:
+                if isinstance(p,dict) and p.get("id"): play_map[str(p.get("id"))]=p
+        time_raw=x.get("timeElapsed")
+        if isinstance(time_raw,dict): drive_time=time_raw.get("displayValue") or time_raw.get("value")
+        else: drive_time=time_raw
+        play_count=x.get("offensivePlays")
+        if play_count is None: play_count=len(raw_plays) if isinstance(raw_plays,list) else raw_plays
+        out["drives"].append({"id":x.get("id"),"team":((x.get("team") or {}).get("abbreviation")) or "—","result":x.get("description") or x.get("displayResult") or x.get("result") or "Drive","yards":x.get("yards"),"time":drive_time,"start":x.get("start"),"end":x.get("end"),"plays":play_count})
+
+    def play_order(p):
+        seq=p.get("sequenceNumber")
+        try:return int(seq)
+        except Exception:
+            try:return int(str(p.get("id") or "0")[-6:])
+            except Exception:return 0
+    for p in sorted(play_map.values(), key=play_order)[-400:]: out["plays"].append(norm_play(p))
+
+    for sp in (d.get("scoringPlays") or []):
+        out["scoring_plays"].append({"id":sp.get("id"),"clock":(sp.get("clock") or {}).get("displayValue"),"period":(sp.get("period") or {}).get("number"),"text":sp.get("text"),"team":((sp.get("team") or {}).get("abbreviation")),"scoreValue":sp.get("scoreValue"),"awayScore":sp.get("awayScore"),"homeScore":sp.get("homeScore")})
+
     latest=out["plays"][-1] if out["plays"] else {}
     start=latest.get("start") or {}; end=latest.get("end") or {}
+    # End state describes the next live situation after the latest completed play.
+    sit=end if end else start
+    possession=None
+    tid=((sit.get("team") or {}).get("id")) if isinstance(sit,dict) else None
+    if tid is not None: possession=team_id_to_abbr.get(str(tid))
+    if not possession and isinstance(current,dict): possession=((current.get("team") or {}).get("abbreviation"))
+    if not possession: possession=latest.get("team")
     out["situation"]={
-        "possession": latest.get("team") or (((current or {}).get("team") or {}).get("abbreviation") if isinstance(current,dict) else None) or "—",
-        "down": start.get("down") or "—",
-        "distance": start.get("distance") or "—",
-        "yardLine": start.get("yardLine") if start.get("yardLine") is not None else (end.get("yardLine") if end.get("yardLine") is not None else "—"),
-        "latestPlayId": latest.get("id"),
-        "latestPlay": latest.get("text") or "—"
+        "possession":possession or "—",
+        "down":sit.get("down") if sit.get("down") is not None else "—",
+        "distance":sit.get("distance") if sit.get("distance") is not None else "—",
+        "yardLine":sit.get("possessionText") or sit.get("downDistanceText") or (sit.get("yardLine") if sit.get("yardLine") is not None else "—"),
+        "downDistanceText":sit.get("downDistanceText") or sit.get("shortDownDistanceText") or "—",
+        "latestPlayId":latest.get("id"),
+        "latestPlay":latest.get("text") or "—"
     }
     out["roster_players"]=baseline_players_for([t.get("abbr") for t in teams])
     if save:STORE.save(out)
@@ -309,7 +362,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.3","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

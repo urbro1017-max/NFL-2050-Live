@@ -17,6 +17,16 @@ LIVE_CACHE={}
 LIVE_CACHE_LOCK=threading.Lock()
 LIVE_CACHE_SECONDS=2.0
 
+# 10.1 PRIME — league-wide roster + player profile caches
+ROSTER_CACHE={}
+ROSTER_CACHE_LOCK=threading.Lock()
+ROSTER_CACHE_SECONDS=21600
+PROFILE_CACHE={}
+PROFILE_CACHE_LOCK=threading.Lock()
+PROFILE_CACHE_SECONDS=3600
+TEAM_IDS={"ARI":"22","ATL":"1","BAL":"33","BUF":"2","CAR":"29","CHI":"3","CIN":"4","CLE":"5","DAL":"6","DEN":"7","DET":"8","GB":"9","HOU":"34","IND":"11","JAX":"30","KC":"12","LV":"13","LAC":"24","LA":"14","MIA":"15","MIN":"16","NE":"17","NO":"18","NYG":"19","NYJ":"20","PHI":"21","PIT":"23","SF":"25","SEA":"26","TB":"27","TEN":"10","WAS":"28"}
+
+
 def _load_verified_players():
     try:
         return json.loads((ROOT/"verified_players.json").read_text(encoding="utf-8"))
@@ -386,26 +396,189 @@ def collector():
         except Exception as e:LAST["error"]=str(e)
         time.sleep(COLLECT_SECONDS)
 
+
+
+def _athlete_ref_id(obj):
+    if not isinstance(obj,dict): return None
+    if obj.get("id") is not None: return str(obj.get("id"))
+    ref=obj.get("$ref") or ""
+    if "/athletes/" in ref:
+        return ref.split("/athletes/",1)[1].split("?",1)[0].split("/",1)[0]
+    return None
+
+def _normalize_roster_athlete(a,team,group=None):
+    if not isinstance(a,dict): return None
+    pos=a.get("position") or {}
+    exp=a.get("experience") or {}
+    college=a.get("college") or {}
+    hs=a.get("headshot") or {}
+    status=a.get("status") or {}
+    return {
+        "id":_athlete_ref_id(a),
+        "name":a.get("fullName") or a.get("displayName") or a.get("name"),
+        "team":team,
+        "position":pos.get("abbreviation") if isinstance(pos,dict) else pos,
+        "position_name":pos.get("displayName") or pos.get("name") if isinstance(pos,dict) else None,
+        "jersey":a.get("jersey"),
+        "age":a.get("age"),
+        "height":a.get("displayHeight"),
+        "weight":a.get("displayWeight"),
+        "experience":exp.get("years") if isinstance(exp,dict) else exp,
+        "college":college.get("name") or college.get("shortName") if isinstance(college,dict) else college,
+        "headshot":hs.get("href") if isinstance(hs,dict) else hs,
+        "status":status.get("name") or status.get("type") if isinstance(status,dict) else status,
+        "group":group,
+        "starter":False,
+        "depth_rank":None,
+        "depth_slot":None,
+        "source":"ESPN_ROSTER"
+    }
+
+def _roster_items(raw,team):
+    out=[]
+    for block in raw.get("athletes") or []:
+        if isinstance(block,dict) and isinstance(block.get("items"),list):
+            group=block.get("position") or block.get("name")
+            for a in block.get("items") or []:
+                row=_normalize_roster_athlete(a,team,group)
+                if row and row.get("name"): out.append(row)
+        else:
+            row=_normalize_roster_athlete(block,team)
+            if row and row.get("name"): out.append(row)
+    return out
+
+def _depth_map(raw):
+    depth={}
+    charts=raw.get("depthCharts") or raw.get("items") or []
+    for chart in charts:
+        for slot,info in (chart.get("positions") or {}).items():
+            pos=info.get("position") or {}
+            for entry in info.get("athletes") or []:
+                athlete=entry.get("athlete") or {}
+                aid=_athlete_ref_id(athlete)
+                if not aid: continue
+                rank=entry.get("rank")
+                old=depth.get(aid)
+                if old is None or (rank is not None and (old.get("rank") is None or rank<old.get("rank"))):
+                    depth[aid]={"rank":rank,"starter":rank==1,"slot":pos.get("abbreviation") or pos.get("name") or slot,"chart":chart.get("name")}
+    return depth
+
+def team_roster(team,force=False):
+    team=str(team or "").upper()
+    if team not in TEAM_IDS: return {"ok":False,"team":team,"players":[],"error":"Unknown NFL team"}
+    now=time.time()
+    with ROSTER_CACHE_LOCK:
+        c=ROSTER_CACHE.get(team)
+        if c and not force and now-c["ts"]<ROSTER_CACHE_SECONDS:return c["value"]
+    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{TEAM_IDS[team]}/roster","ESPN_TEAM_ROSTER")
+    players=_roster_items(raw,team)
+    depth={}
+    try:
+        depthraw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{TEAM_IDS[team]}/depthcharts","ESPN_TEAM_DEPTHCHART")
+        depth=_depth_map(depthraw)
+    except Exception:
+        pass
+    for p in players:
+        d=depth.get(str(p.get("id"))) or {}
+        p["starter"]=bool(d.get("starter"));p["depth_rank"]=d.get("rank");p["depth_slot"]=d.get("slot");p["depth_chart"]=d.get("chart")
+    value={"ok":True,"team":team,"players":players,"count":len(players),"starters":sum(1 for p in players if p.get("starter")),"source":"ESPN_ROSTER+DEPTHCHART","updated":int(now)}
+    with ROSTER_CACHE_LOCK:ROSTER_CACHE[team]={"ts":now,"value":value}
+    return value
+
+def league_rosters():
+    rows=[];errors=[]
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        fut={ex.submit(team_roster,t):t for t in TEAM_IDS}
+        for f in as_completed(fut):
+            t=fut[f]
+            try:
+                d=f.result();rows.extend(d.get("players") or [])
+                if not d.get("ok"):errors.append(t)
+            except Exception:errors.append(t)
+    return rows,errors
+
+def _flatten_stats(raw):
+    out=[]
+    def walk(x,cat=None):
+        if isinstance(x,dict):
+            name=x.get("displayName") or x.get("name") or cat
+            if isinstance(x.get("stats"),list):
+                for st in x["stats"]:
+                    if not isinstance(st,dict):continue
+                    label=st.get("displayName") or st.get("name") or st.get("abbreviation")
+                    val=st.get("displayValue",st.get("value"))
+                    if label is not None and val is not None:out.append({"category":name,"label":label,"value":val})
+            for k,v in x.items():
+                if k not in {"stats"}:walk(v,name if k in {"categories","splits"} else cat)
+        elif isinstance(x,list):
+            for v in x:walk(v,cat)
+    walk(raw)
+    seen=set();clean=[]
+    for x in out:
+        k=(str(x.get("category")),str(x.get("label")),str(x.get("value")))
+        if k not in seen:seen.add(k);clean.append(x)
+    return clean[:80]
+
+def player_profile(aid):
+    aid=str(aid or "")
+    if not aid.isdigit():return {"ok":False,"error":"Invalid athlete id"}
+    now=time.time()
+    with PROFILE_CACHE_LOCK:
+        c=PROFILE_CACHE.get(aid)
+        if c and now-c["ts"]<PROFILE_CACHE_SECONDS:return c["value"]
+    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{aid}","ESPN_ATHLETE_PROFILE")
+    a=raw.get("athlete") if isinstance(raw.get("athlete"),dict) else raw
+    team=(a.get("team") or {}) if isinstance(a,dict) else {}
+    pos=(a.get("position") or {}) if isinstance(a,dict) else {}
+    exp=(a.get("experience") or {}) if isinstance(a,dict) else {}
+    college=(a.get("college") or {}) if isinstance(a,dict) else {}
+    hs=(a.get("headshot") or {}) if isinstance(a,dict) else {}
+    stats=[]
+    try:
+        sr=fetch(f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_ATHLETE_STATS")
+        stats=_flatten_stats(sr)
+    except Exception:pass
+    team_ab=team.get("abbreviation")
+    depth_row={}
+    if team_ab in TEAM_IDS:
+        try:
+            rd=team_roster(team_ab)
+            depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
+        except Exception:pass
+    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"source":"ESPN_ATHLETE_PROFILE+STATS+DEPTHCHART"},"updated":int(now)}
+    with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
+    return value
+
 def player_index():
-    # Start with the verified embedded matchup roster so the Players page is useful
-    # before kickoff and even before a game has been archived. Live/archive lines are
-    # merged on top without pretending baseline data is live.
+    # 10.1: all active team rosters are the primary player directory. Archive game
+    # rows are merged on top so profiles retain captured Atlas game history.
     out={}
-    for p in VERIFIED_PLAYERS:
-        n=p.get("name")
-        if not n: continue
-        out[n]={"id":None,"name":n,"team":p.get("team"),"position":p.get("pos"),"unit":p.get("unit"),"baseline":p.get("past"),"source":"EMBEDDED_VERIFIED_BASELINE","games":[]}
+    errors=[]
+    try:
+        roster_rows,errors=league_rosters()
+        for p in roster_rows:
+            key=str(p.get("id") or (p.get("team"),p.get("name")))
+            out[key]={**p,"games":[]}
+    except Exception as e:
+        errors=["league_rosters"]
+    # Embedded verified rows remain a fallback only.
+    if not out:
+        for p in VERIFIED_PLAYERS:
+            n=p.get("name")
+            if n:out[str((p.get("team"),n))]={"id":None,"name":n,"team":p.get("team"),"position":p.get("pos"),"unit":p.get("unit"),"baseline":p.get("past"),"source":"EMBEDDED_VERIFIED_BASELINE","games":[],"starter":False}
     for gm in STORE.games():
         g=STORE.game(gm["id"]) or {}
         for p in g.get("players",[]):
-            n=p.get("name")
+            n=p.get("name");aid=str(p.get("id") or "")
             if not n:continue
-            row=out.setdefault(n,{"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"unit":None,"baseline":None,"source":"ARCHIVED_FEED","games":[]})
-            if p.get("id"): row["id"]=p.get("id")
-            if p.get("team"): row["team"]=p.get("team")
-            if p.get("position"): row["position"]=p.get("position")
-            row["games"].append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
-    return sorted(out.values(),key=lambda x:(x.get("team") or "",x.get("position") or "",x.get("name") or ""))
+            row=out.get(aid) if aid else None
+            if row is None:
+                row=next((v for v in out.values() if v.get("name")==n and v.get("team")==p.get("team")),None)
+            if row is None:
+                key=aid or str((p.get("team"),n));row={"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"source":"ARCHIVED_FEED","games":[],"starter":False};out[key]=row
+            row.setdefault("games",[]).append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
+    rows=sorted(out.values(),key=lambda x:(x.get("team") or "",0 if x.get("starter") else 1,x.get("position") or "",x.get("name") or ""))
+    return rows
 
 def team_index():
     out={}
@@ -589,10 +762,23 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
             return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
-        if u.path=="/api/players":return self.sendj({"players":player_index()})
+        if u.path=="/api/players":
+            team=(q.get("team") or [None])[0]
+            if team:
+                try:return self.sendj(team_roster(team))
+                except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
+            rows=player_index();return self.sendj({"players":rows,"count":len(rows),"teams":len({p.get("team") for p in rows if p.get("team")}),"source":"LEAGUE_ROSTERS+ATLAS_ARCHIVE"})
+        if u.path=="/api/roster":
+            team=(q.get("team") or [""])[0]
+            try:return self.sendj(team_roster(team))
+            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
+        if u.path=="/api/player":
+            aid=(q.get("id") or [""])[0]
+            try:return self.sendj(player_profile(aid))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

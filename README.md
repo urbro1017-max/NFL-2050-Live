@@ -1,18 +1,19 @@
-# GRIDIRON ATLAS 10.0 — UNIVERSE
+# GRIDIRON ATLAS 10.1 — PRIME
 
-Depth-first overhaul of GRIDIRON ATLAS. The primary navigation is consolidated to LIVE, LEAGUE, TEAMS, PLAYERS, LAB, FRONT OFFICE, and MY ATLAS while preserving legacy deep workspaces as contextual tools.
+All-32 roster and player-profile overhaul built on 10.0 Universe.
 
-## 10.0 additions
-- Team Universe with all-32 selection, season context, stored-game production, team leaders, roster/matchup/trend jumps
-- Atlas Lab with Play Explorer, Drive Lab, Situational Matrix, Scoring Anatomy, and consolidated deep-tool launcher
-- Play filtering by text, team, play type, down, and explosive threshold
-- CSV export for captured game play-by-play
-- Existing Week Center, Season Center, Roster HQ, Matchup Lab, Data Quality, War Room, Film Room, Stat Studio, Game DNA, Situation Lab, Archive, universal command search, density modes, TV mode and PWA retained
-- 9.1 runtime bug involving undefined legacy render wrappers removed
-- Service worker cache bumped to v100
+## New in 10.1
+- All 32 NFL teams selectable in Team Universe and Roster HQ.
+- Server-side roster import with six-hour cache.
+- Depth-chart merge; rank-1 entries are labeled as starters only when the depth feed verifies rank 1.
+- League-wide Players directory built from current team rosters.
+- Player profiles with provider-supplied jersey, position, age, height, weight, experience, college, headshot, and 2026 season statistics when available.
+- Team Universe starter strip with clickable player profiles.
+- New PRIME interface: navy/slate, warm off-white, electric cyan, amber highlights, restrained team-color accents.
+- Existing 10.0 live, league, team, lab, front-office, archive and database systems preserved.
 
 ## Data integrity
-Provider values remain provider-supplied. Atlas-derived metrics are labeled. Unsupported metrics display —. Tracking-grade advanced metrics remain source-gated.
+Roster/depth/profile data are fetched at runtime from the existing ESPN public JSON surfaces used by Atlas. Unsupported or missing values display —. Atlas does not infer starter status: only rank-1 depth-chart entries receive the starter label. These endpoints are unofficial/undocumented transports and may change.
 
-## Deploy
-Upload the contents of this package directly to the existing GitHub repository root. Keep the existing Render service and DATABASE_URL unchanged.
+## Render
+Keep the existing service and DATABASE_URL. Build: `pip install -r requirements.txt`. Start: `python server.py`.

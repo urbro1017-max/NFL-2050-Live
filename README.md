@@ -1,4 +1,4 @@
-# GRIDIRON ATLAS 6.4 — Freshness Fusion
+# GRIDIRON ATLAS 6.5 — Team Identity
 
 Live accuracy repair. The backend now queries multiple ESPN live surfaces concurrently and chooses the response representing the furthest actual game progress, rather than assuming one CDN endpoint is freshest.
 

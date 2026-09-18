@@ -699,26 +699,35 @@ function installMoreTools171(){let bar=document.querySelector('.gmToolbar150');i
 // ATLAS 17.0 — Neon Data Fusion / source observability
 const ATLAS17={sources:null};
 function spark17(vals,cls=''){let v=vals.filter(x=>Number.isFinite(+x)).map(Number);if(v.length<2)v=[2,5,3,7,6,9];let lo=Math.min(...v),hi=Math.max(...v),rng=hi-lo||1;let pts=v.map((x,i)=>`${(i/(v.length-1))*100},${64-((x-lo)/rng)*54}`).join(' ');return `<svg class="miniChart17" viewBox="0 0 100 70" preserveAspectRatio="none"><polyline class="${cls}" points="${pts}"/></svg>`}
-async function loadNetwork17(force=false){
+async function loadNetwork17(force=false,quiet=false){
  let b=document.querySelector('#networkBody17');if(!b)return;
- b.innerHTML='<div class="diagLoading171">Running background diagnostics…</div>';
+ if(!quiet)b.innerHTML='<div class="diagLoading171">Running system diagnostics…</div>';
  try{
   let d=await api('/api/sources'+(force?'?force=1':''));ATLAS17.sources=d;
   let rows=d.sources||[],up=rows.filter(x=>x.ok).length,checks=d.diagnostics||[],pass=checks.filter(x=>x.ok).length;
   let lat=rows.filter(x=>x.latency_ms!=null).map(x=>x.latency_ms).sort((a,b)=>a-b),median=lat.length?Math.round(lat[Math.floor(lat.length/2)]):null;
   const status=up===rows.length&&pass===checks.length?'HEALTHY':up>0?'DEGRADED':'OFFLINE';
+  const live=rows.filter(x=>/feed/i.test(x.kind||'')),refs=rows.filter(x=>!/feed/i.test(x.kind||''));
+  const sourceRow=x=>`<article class="sourceRow172 ${x.ok?'ok':'down'}"><i></i><div class="sourceIdentity172"><small>${esc(x.kind||'SOURCE').toUpperCase()}</small><b>${esc(x.name)}</b><span>${esc(x.role||'')}</span></div><div class="sourceState172"><strong>${x.ok?'ONLINE':'DOWN'}</strong><span>${esc(x.status||'—')} · ${x.latency_ms==null?'—':x.latency_ms+' ms'}</span></div></article>`;
   b.innerHTML=`<div class="signalSummary171 ${status.toLowerCase()}">
-   <div><small>SYSTEM STATUS</small><strong>${status}</strong><span>${pass}/${checks.length} internal checks · ${up}/${rows.length} external sources</span></div>
-   <div class="signalMetric171"><small>MEDIAN SOURCE LATENCY</small><b>${median==null?'—':median+' ms'}</b></div>
-   <div class="signalMetric171"><small>LAST DIAGNOSTIC</small><b>${new Date((d.updated||Date.now()/1000)*1000).toLocaleTimeString()}</b></div>
+   <div><small>SYSTEM STATUS</small><strong>${status}</strong><span>${pass}/${checks.length} core checks · ${up}/${rows.length} sources reachable</span></div>
+   <div class="signalMetric171"><small>MEDIAN LATENCY</small><b>${median==null?'—':median+' ms'}</b></div>
+   <div class="signalMetric171"><small>LAST CHECK</small><b>${new Date((d.updated||Date.now()/1000)*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</b></div>
   </div>
-  <div class="diagGrid171">${checks.map(x=>`<article class="diag171 ${x.ok?'ok':'bad'}"><i></i><div><b>${esc(x.name)}</b><span>${esc(x.detail||'')}</span></div><strong>${x.ok?'PASS':'FAIL'}</strong></article>`).join('')}</div>
-  <div class="surfaceTitle171"><div><small>DATA SOURCES</small><h3>Provider health</h3></div><span>Only working links are treated as live data paths.</span></div>
-  <div class="sourceGrid17 compact171">${rows.map(x=>`<div class="sourceCard17 ${x.ok?'ok':'down'}"><strong>${x.ok?'ONLINE':'UNAVAILABLE'}</strong><small>${esc(x.kind||'SOURCE').toUpperCase()}</small><h3>${esc(x.name)}</h3><span>${esc(x.role||'')}</span><div class="sourceMeta17"><span>${esc(x.status||'—')}</span><span>${x.latency_ms==null?'—':x.latency_ms+' ms'}</span></div></div>`).join('')}</div>
-  <details class="dataPolicy171"><summary>Data provenance & NGS policy</summary><p>Live scores, schedules, rosters and public season statistics use reachable public feeds. NFL Next Gen Stats remains source-gated: ATLAS does not label estimates as NGS and does not claim a raw AWS/NGS connection without an authenticated feed.</p></details>`;
- }catch(e){b.innerHTML=`<div class="diagFailure171"><b>Diagnostic endpoint failed</b><span>${esc(e.message||e)}</span><button onclick="loadNetwork17(true)">Retry</button></div>`}
+  <div class="diagStrip172">${checks.map(x=>`<article class="diag172 ${x.ok?'ok':'bad'}"><i></i><div><b>${esc(x.name)}</b><span>${esc(x.detail||'')}</span></div><strong>${x.ok?'PASS':'FAIL'}</strong></article>`).join('')}</div>
+  <div class="dataColumns172"><section><header><div><small>OPERATIONAL PATHS</small><h3>Live data feeds</h3></div><span>${live.filter(x=>x.ok).length}/${live.length} online</span></header><div class="sourceRows172">${live.map(sourceRow).join('')}</div></section><section><header><div><small>PROVENANCE</small><h3>Official references</h3></div><span>${refs.filter(x=>x.ok).length}/${refs.length} reachable</span></header><div class="sourceRows172">${refs.map(sourceRow).join('')}</div></section></div>
+  <details class="dataPolicy171"><summary>What ATLAS is actually connected to</summary><p>Operational NFL data uses reachable public feeds. NFL Stats, Next Gen Stats and AWS × NFL are verification/reference paths only unless a raw authenticated feed is explicitly available. ATLAS leaves unsupported tracking metrics unavailable instead of estimating them.</p></details>`;
+  updateBackgroundDiag172(d,status);
+ }catch(e){if(!quiet)b.innerHTML=`<div class="diagFailure171"><b>Diagnostic endpoint failed</b><span>${esc(e.message||e)}</span><button id="diagRetry172">Retry</button></div>`;updateBackgroundDiag172(null,'OFFLINE')}
 }
+function updateBackgroundDiag172(d,status){
+ let chip=document.querySelector('#bgDiag172');if(!chip){chip=document.createElement('button');chip.id='bgDiag172';chip.className='bgDiag172';chip.title='Open Data Health';chip.onclick=()=>route({view:'network17'});document.querySelector('.topTools121')?.prepend(chip)}
+ if(chip){chip.dataset.state=(status||'OFFLINE').toLowerCase();chip.innerHTML=`<i></i><span>DATA ${status||'OFFLINE'}</span>`}
+}
+let diagTimer172=null;
+function startBackgroundDiagnostics172(){if(diagTimer172)return;diagTimer172=setInterval(()=>{if(document.hidden)return;if(state.view==='network17')loadNetwork17(false,true);else api('/api/sources').then(d=>{let r=d.sources||[],c=d.diagnostics||[];updateBackgroundDiag172(d,r.every(x=>x.ok)&&c.every(x=>x.ok)?'HEALTHY':r.some(x=>x.ok)?'DEGRADED':'OFFLINE')}).catch(()=>updateBackgroundDiag172(null,'OFFLINE'))},60000)}
+
 function installNetwork17(){let r=document.querySelector('#refreshSources17');if(r)r.onclick=()=>loadNetwork17(true);installMoreTools171()}
 document.addEventListener('click',e=>{let b=e.target.closest('[data-route="network17"]');if(b)setTimeout(()=>loadNetwork17(false),30)});
-const _rr17=renderRoute;renderRoute=function(){_rr17();document.body.dataset.atlasVersion='17';document.title='ATLAS 17.1 — SIGNAL CORE';installNetwork17();if((location.hash||'').includes('network17'))loadNetwork17(false)};
-setTimeout(installNetwork17,100);
+const _rr17=renderRoute;renderRoute=function(){_rr17();document.body.dataset.atlasVersion='17';document.title='ATLAS 17.2 — PRISM CORE';installNetwork17();if((location.hash||'').includes('network17'))loadNetwork17(false)};
+setTimeout(()=>{installNetwork17();startBackgroundDiagnostics172();api('/api/sources').then(d=>{let r=d.sources||[],c=d.diagnostics||[];updateBackgroundDiag172(d,r.every(x=>x.ok)&&c.every(x=>x.ok)?'HEALTHY':r.some(x=>x.ok)?'DEGRADED':'OFFLINE')}).catch(()=>updateBackgroundDiag172(null,'OFFLINE'))},100);

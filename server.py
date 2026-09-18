@@ -415,6 +415,103 @@ def team_index():
             ab=t.get("abbr");out.setdefault(ab,{"abbr":ab,"name":t.get("name"),"logo":_team_logo(t),"games":[]});out[ab]["games"].append({"game_id":g["id"],"status":g.get("status"),"score":t.get("score"),"team_stats":g.get("team_stats",{}).get(ab,{})})
     return list(out.values())
 
+
+LEAGUE_CACHE={"ts":0,"value":None}
+LEAGUE_CACHE_SECONDS=60
+
+def _stat_value(stats,names):
+    wanted={str(x).lower().replace(' ','').replace('-','') for x in names}
+    for st in stats or []:
+        key=str(st.get('name') or st.get('abbreviation') or st.get('displayName') or '').lower().replace(' ','').replace('-','')
+        if key in wanted:return st.get('displayValue',st.get('value'))
+    return None
+
+def _standings_feed():
+    raw=fetch('https://site.api.espn.com/apis/v2/sports/football/nfl/standings?season=2026','ESPN_STANDINGS')
+    rows=[]
+    def walk(x):
+        if isinstance(x,dict):
+            st=x.get('standings')
+            if isinstance(st,dict) and isinstance(st.get('entries'),list):
+                for e in st['entries']:
+                    tm=e.get('team') or {}; stats=e.get('stats') or []
+                    wins=_stat_value(stats,['wins']); losses=_stat_value(stats,['losses']); ties=_stat_value(stats,['ties'])
+                    rec='—'
+                    if wins is not None and losses is not None: rec=f"{wins}-{losses}"+(f"-{ties}" if str(ties) not in ('0','0.0','None') else '')
+                    rows.append({'abbr':tm.get('abbreviation'),'name':tm.get('displayName') or tm.get('name'),'logo':_team_logo(tm),'record':rec,'winPct':_stat_value(stats,['winPercent','winpct']),'pointsFor':_stat_value(stats,['pointsFor','pointsfor']),'pointsAgainst':_stat_value(stats,['pointsAgainst','pointsagainst']),'diff':_stat_value(stats,['differential','pointDifferential']),'streak':_stat_value(stats,['streak']),'rank':_stat_value(stats,['playoffSeed','rank'])})
+            for v in x.values(): walk(v)
+        elif isinstance(x,list):
+            for v in x: walk(v)
+    walk(raw)
+    seen={};
+    for r in rows:
+        if r.get('abbr'):seen[r['abbr']]=r
+    return list(seen.values())
+
+def _leaders_feed():
+    raw=fetch('https://site.api.espn.com/apis/site/v3/sports/football/nfl/leaders?season=2026&seasontype=2','ESPN_LEADERS')
+    groups=[]
+    def athlete_name(x):
+        a=x.get('athlete') or x.get('player') or {}
+        return a.get('displayName') or a.get('fullName') or x.get('displayName') or x.get('name')
+    def walk(x):
+        if isinstance(x,dict):
+            ls=x.get('leaders')
+            if isinstance(ls,list) and ls and any(isinstance(z,dict) and (z.get('athlete') or z.get('player')) for z in ls):
+                name=x.get('displayName') or x.get('name') or x.get('abbreviation') or 'Leaders'
+                vals=[]
+                for z in ls:
+                    if not isinstance(z,dict):continue
+                    a=z.get('athlete') or z.get('player') or {}; tm=z.get('team') or a.get('team') or {}
+                    vals.append({'name':athlete_name(z),'team':tm.get('abbreviation') if isinstance(tm,dict) else tm,'value':z.get('displayValue',z.get('value'))})
+                groups.append({'name':name,'leaders':vals})
+            for v in x.values():walk(v)
+        elif isinstance(x,list):
+            for v in x:walk(v)
+    walk(raw)
+    # de-duplicate by category name, preserving feed order
+    out=[]; seen=set()
+    for g in groups:
+        k=g['name']
+        if k not in seen and g['leaders']:
+            seen.add(k);out.append(g)
+    return out
+
+def _atlas_team_profiles():
+    acc={}
+    for gm in STORE.games():
+        g=STORE.game(gm['id']) or {}; teams=g.get('teams') or []
+        if len(teams)<2:continue
+        for t in teams:
+            ab=t.get('abbr'); opp=next((x for x in teams if x.get('abbr')!=ab),{})
+            if not ab:continue
+            r=acc.setdefault(ab,{'abbr':ab,'name':t.get('name'),'logo':t.get('logo'),'games':0,'pf':0,'yards':0,'ya':0,'takeaways':0})
+            r['games']+=1;r['pf']+=float(t.get('score') or 0)
+            y=_stat_value([{'name':k,'displayValue':v} for k,v in (g.get('team_stats',{}).get(ab,{}) or {}).items()],['Total Yards'])
+            oy=_stat_value([{'name':k,'displayValue':v} for k,v in (g.get('team_stats',{}).get(opp.get('abbr'),{}) or {}).items()],['Total Yards'])
+            ot=_stat_value([{'name':k,'displayValue':v} for k,v in (g.get('team_stats',{}).get(opp.get('abbr'),{}) or {}).items()],['Turnovers'])
+            try:r['yards']+=float(str(y).replace(',',''))
+            except:pass
+            try:r['ya']+=float(str(oy).replace(',',''))
+            except:pass
+            try:r['takeaways']+=int(float(str(ot)))
+            except:pass
+    out=[]
+    for r in acc.values():
+        n=r['games'] or 1;r['ppg']=r['pf']/n;r['ypg']=r['yards']/n if r['yards'] else None;r['yapg']=r['ya']/n if r['ya'] else None;out.append(r)
+    return sorted(out,key=lambda x: (-(x.get('ppg') or 0),x['abbr']))
+
+def league_hq():
+    now=time.time()
+    if LEAGUE_CACHE['value'] and now-LEAGUE_CACHE['ts']<LEAGUE_CACHE_SECONDS:return LEAGUE_CACHE['value']
+    standings=[];leaders=[];errors=[]
+    try:standings=_standings_feed()
+    except Exception as e:errors.append('standings:'+type(e).__name__)
+    try:leaders=_leaders_feed()
+    except Exception as e:errors.append('leaders:'+type(e).__name__)
+    out={'season':2026,'standings':standings,'leaders':leaders,'teams':_atlas_team_profiles(),'errors':errors,'source':'ESPN_PUBLIC_SEASON_FEEDS+ATLAS_VERIFIED_STORE','updated':int(now)}
+    LEAGUE_CACHE.update(ts=now,value=out);return out
+
 def legacy_live():
     g=game(DEFAULT_GAME_ID);out={"game":{"status":g.get("status","Pregame"),"detScore":0,"bufScore":0,"period":g.get("period",0),"clock":g.get("clock","—"),"possession":"—","downDistance":"—","ballSpot":"—"},"plays":g.get("plays",[])[-24:],"team_stats":g.get("team_stats",{}),"players":g.get("players",[]),"linescores":{"DET":g.get("linescores",{}).get("DET",[]),"BUF":g.get("linescores",{}).get("BUF",[])},"drives":g.get("drives",[])[-8:]}
     for t in g.get("teams",[]):
@@ -444,7 +541,8 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.6","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/league":return self.sendj(league_hq())
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.7","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

@@ -1,11 +1,12 @@
-# GRIDIRON ATLAS 6.6 — Game Glance
+# GRIDIRON ATLAS 6.7 — MAX ATLAS
 
-Readability-first live NFL dashboard. Keeps the 6.4 freshness-fusion live engine, while rebuilding Game Overview, Team Stats, and Analytics around a simple question: **what is happening right now?**
+The largest Atlas build yet.
 
-- Automatic matchup colors
-- Large score/current-situation treatment
-- Side-by-side visual stat comparisons
-- Essential stats only
-- Cleaner live play/current drive cards
-- Simplified analytics: yards/play, points/drive, total yards, first downs, turnovers, third down
-- No fabricated statistics
+- 2.5-second default live polling with newest-state fusion preserved from 6.4.
+- New League HQ with standings, Team Lab, league leaders, defense command, and a source-gated Next Gen Lab.
+- Larger Analytics workspace with score flow, quarter scoring, drive efficiency, production split, live leaders, and defensive snapshot.
+- Team-colored matchup UI retained.
+- Season feeds are cached separately from live games so live polling stays fast.
+- Atlas never fabricates unavailable metrics: missing data displays as `—`.
+- Next Gen Stats placeholders remain source-gated until a verified tracking-data source is connected.
+- Gambling/odds features are intentionally not included.

@@ -240,11 +240,10 @@ def game(gid,save=True):
 def collect_once():
     sb=scoreboard()
     for g in sb.get("games",[]):
-        # Use the provider's structured game state instead of guessing from status text.
-        state=(g.get("state") or "").lower()
-        if state in {"in", "post"} or g.get("completed"):
-            try: game(g["id"], True)
-            except Exception as e: LAST["error"]=str(e)
+        # Hydrate every discovered game. This avoids a provider-state parsing mismatch
+        # preventing live collection when ESPN changes status wording/shape.
+        try: game(g["id"], True)
+        except Exception as e: LAST["error"]=str(e)
     LAST["collector"]=int(time.time())
 def collector():
     while True:
@@ -310,7 +309,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

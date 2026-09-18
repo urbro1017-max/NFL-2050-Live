@@ -1,25 +1,14 @@
-# GRIDIRON ATLAS 11.0 — NFL OPERATING SYSTEM
+# GRIDIRON ATLAS 11.1 — SUNDAY READY
 
-11.0 moves Atlas from a single-game-first product to a league-week platform.
+Reliability overhaul built on 11.0 NFL Week Engine.
 
-## NFL Week Engine
-- Automatically discovers the current NFL week from the schedule provider.
-- Week navigation for the 2026 regular season.
-- Lifecycle states: UPCOMING → LIVE → FINAL → ARCHIVED.
-- Sunday Command grid shows the entire slate and drills directly into Game Center.
-- Browser date requests are normalized before Core event discovery.
+## 11.1 changes
+- Adaptive browser polling: live games fast, near-kickoff games moderate, distant pregame slow, final games stop polling.
+- Completed games are served from the Atlas archive for normal UI reads instead of repeatedly hitting upstream providers.
+- Week collector records discovered/attempted/succeeded/failed/skipped counts and isolates background errors.
+- Sunday Command adds All / Live / Upcoming / Final filters and collection-state messaging.
+- Final Game Center swaps live situation KPIs for final team comparisons and labels the last possession correctly.
+- Week schedule cache tightened while full game hydration remains state-aware.
+- Service worker cache bumped to v111.
 
-## Smart collector
-- Discovers the whole current week on each collector cycle.
-- Live games are hydrated automatically.
-- Pregame games are hydrated only near kickoff.
-- Completed games receive a final archival capture and are then left alone.
-- Existing PostgreSQL game/archive system remains the source for Atlas-owned history.
-
-## Existing Atlas systems retained
-- Player Universe with honest archive coverage, game log, trends and splits.
-- Team Universe, League, Lab, My Atlas and multi-source Game Center.
-- Missing or unverifiable values remain —.
-- Tracking-grade metrics remain source-gated.
-
-No secrets or database files are included in this package.
+Data integrity rule: unavailable statistics remain —. Atlas does not fabricate provider data.

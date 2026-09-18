@@ -116,7 +116,7 @@ STORE=Store()
 SCORE_CACHE={"key":None,"ts":0,"value":None}
 SCORE_CACHE_SECONDS=20
 WEEK_CACHE={"key":None,"ts":0,"value":None}
-WEEK_CACHE_SECONDS=60
+WEEK_CACHE_SECONDS=45
 
 def eastern_day():
     return datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
@@ -302,12 +302,23 @@ def _fetch_live_candidates(gid):
             except Exception:pass
     return found
 
-def game(gid,save=True):
+def game(gid,save=True,prefer_archive=True):
     gid=str(gid)
     with LIVE_CACHE_LOCK:
         cached=LIVE_CACHE.get(gid)
         if cached and time.time()-cached["ts"]<LIVE_CACHE_SECONDS:
             return cached["value"]
+    # 11.1: completed games are immutable for normal UI reads. Once Atlas has a
+    # completed snapshot, serve it from PostgreSQL instead of re-hitting upstream
+    # every 2.5 seconds. The collector can pass prefer_archive=False for the one
+    # authoritative final capture.
+    if prefer_archive:
+        archived=STORE.game(gid)
+        if archived and (archived.get("completed") or str(archived.get("state") or "").lower()=="post"):
+            archived=dict(archived)
+            archived["served_from_archive"]=True
+            archived["source"]=(archived.get("source") or "ATLAS_ARCHIVE")+":ARCHIVE"
+            return archived
     candidates=_fetch_live_candidates(gid)
     if not candidates:
         archived=STORE.game(gid)
@@ -431,20 +442,43 @@ def game(gid,save=True):
     return out
 
 def collect_once():
-    # 11.0 Week Engine: discover the whole current NFL week, then hydrate only games
-    # that are live, near kickoff, or need one final archival capture.
+    # 11.1 Sunday Ready collector. Schedule discovery is cheap; full game hydration
+    # is reserved for live games, the kickoff warm-up window, and one final capture.
     wk=week_schedule()
     rows=wk.get("games",[]) if wk.get("ok") else scoreboard().get("games",[])
-    collected=0
+    stats={"discovered":len(rows),"attempted":0,"succeeded":0,"failed":0,"skipped":0,"live":0,"pregame":0,"final":0}
+    errors=[]
     for g in rows:
-        if not should_collect_week_game(g): continue
-        try: game(g["id"], True); collected+=1
-        except Exception as e: LAST["error"]=str(e)
-    LAST["collector"]=int(time.time()); LAST["week_collected"]=collected; LAST["week_discovered"]=len(rows)
+        state=str(g.get("state") or "pre").lower()
+        if state=="in": stats["live"]+=1
+        elif g.get("completed") or state=="post": stats["final"]+=1
+        else: stats["pregame"]+=1
+        if not should_collect_week_game(g):
+            stats["skipped"]+=1; continue
+        stats["attempted"]+=1
+        try:
+            # bypass archive only when the schedule says a final still needs capture
+            force_final=bool(g.get("completed") or state=="post")
+            result=game(g["id"], True, prefer_archive=not force_final)
+            if result and result.get("available",True): stats["succeeded"]+=1
+            else:
+                stats["failed"]+=1; errors.append(f"{g.get('id')}: unavailable")
+        except Exception as e:
+            stats["failed"]+=1; errors.append(f"{g.get('id')}: {type(e).__name__}")
+    LAST["collector"]=int(time.time())
+    LAST["week_collected"]=stats["succeeded"]
+    LAST["week_discovered"]=stats["discovered"]
+    LAST["collector_stats"]=stats
+    LAST["collector_errors"]=errors[-5:]
+    # Do not poison the whole app health state for isolated background failures.
+    LAST["error"]=("; ".join(errors[-3:]) if errors and stats["succeeded"]==0 and stats["attempted"] else None)
+    return stats
+
 def collector():
     while True:
         try:collect_once()
-        except Exception as e:LAST["error"]=str(e)
+        except Exception as e:
+            LAST["collector_errors"]=[f"collector: {type(e).__name__}"]
         time.sleep(COLLECT_SECONDS)
 
 
@@ -1069,7 +1103,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"11.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"11.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

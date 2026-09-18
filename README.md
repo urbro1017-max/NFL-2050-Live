@@ -1,6 +1,6 @@
-# GRIDIRON ATLAS 6.0 — Rebuilt Frontend
+# GRIDIRON ATLAS 6.1 — Stability + Players Frontend
 
-6.0 replaces the accumulated legacy dashboard with one coherent application shell while preserving the ESPN/PostgreSQL backend.
+6.1 replaces the accumulated legacy dashboard with one coherent application shell while preserving the ESPN/PostgreSQL backend.
 
 ## Major changes
 - Browser-native internal routing with Back/Forward history for page + game + subtab + scroll state.
@@ -24,3 +24,11 @@ No synthetic football values are inserted. Feed values are marked/treated as con
 Build: `pip install -r requirements.txt`
 Start: `python server.py`
 Keep `DATABASE_URL` private.
+
+
+## 6.1 fixes
+- Fixed missing datetime/ZoneInfo imports that could break /api/games at runtime.
+- Players page now always includes the verified embedded DET/BUF matchup roster before live box-score rows arrive.
+- Player box score clearly falls back to BASELINE roster data pregame instead of appearing empty.
+- Back/Forward preserves the current internal tab route and direct hash routes survive refresh.
+- Live player rows remain feed-only; baseline rows are never mislabeled as live.

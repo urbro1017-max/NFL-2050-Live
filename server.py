@@ -1,4 +1,6 @@
 import json,os,time,sqlite3,csv,io,threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from urllib.request import Request,urlopen
 from urllib.parse import urlparse,parse_qs
@@ -10,6 +12,18 @@ DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_CORE_DISCOVERY+CDN_GAME"
+
+def _load_verified_players():
+    try:
+        return json.loads((ROOT/"verified_players.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+VERIFIED_PLAYERS=_load_verified_players()
+
+def baseline_players_for(teams):
+    wanted={str(x).upper() for x in teams if x}
+    return [{"name":p.get("name"),"team":p.get("team"),"position":p.get("pos"),"unit":p.get("unit"),"baseline":p.get("past"),"source":"EMBEDDED_VERIFIED_BASELINE"} for p in VERIFIED_PLAYERS if str(p.get("team","")).upper() in wanted]
 LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None}
 
 def fetch(u,label="ESPN"):
@@ -219,6 +233,7 @@ def game(gid,save=True):
         "latestPlayId": latest.get("id"),
         "latestPlay": latest.get("text") or "—"
     }
+    out["roster_players"]=baseline_players_for([t.get("abbr") for t in teams])
     if save:STORE.save(out)
     return out
 
@@ -238,15 +253,25 @@ def collector():
         time.sleep(COLLECT_SECONDS)
 
 def player_index():
+    # Start with the verified embedded matchup roster so the Players page is useful
+    # before kickoff and even before a game has been archived. Live/archive lines are
+    # merged on top without pretending baseline data is live.
     out={}
+    for p in VERIFIED_PLAYERS:
+        n=p.get("name")
+        if not n: continue
+        out[n]={"id":None,"name":n,"team":p.get("team"),"position":p.get("pos"),"unit":p.get("unit"),"baseline":p.get("past"),"source":"EMBEDDED_VERIFIED_BASELINE","games":[]}
     for gm in STORE.games():
         g=STORE.game(gm["id"]) or {}
         for p in g.get("players",[]):
-            n=p.get("name"); 
+            n=p.get("name")
             if not n:continue
-            out.setdefault(n,{"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"games":[]})
-            out[n]["games"].append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
-    return list(out.values())
+            row=out.setdefault(n,{"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"unit":None,"baseline":None,"source":"ARCHIVED_FEED","games":[]})
+            if p.get("id"): row["id"]=p.get("id")
+            if p.get("team"): row["team"]=p.get("team")
+            if p.get("position"): row["position"]=p.get("position")
+            row["games"].append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
+    return sorted(out.values(),key=lambda x:(x.get("team") or "",x.get("position") or "",x.get("name") or ""))
 
 def team_index():
     out={}
@@ -285,7 +310,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

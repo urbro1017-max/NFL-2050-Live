@@ -1,4 +1,4 @@
-# ATLAS 17.2 — PRISM CORE
+# ATLAS 17.3 — CLEAN CORE
 
 Complete Render-ready build.
 

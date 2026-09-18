@@ -1,23 +1,26 @@
-# GRIDIRON ATLAS 5.0 — Clean System Overhaul
+# GRIDIRON ATLAS 6.0 — Rebuilt Frontend
 
-A stability-first overhaul of the 4.0 Command Center.
+6.0 replaces the accumulated legacy dashboard with one coherent application shell while preserving the ESPN/PostgreSQL backend.
 
-## What changed
-- Cleaner, denser command-center UI with improved typography, spacing, responsive cards, and stronger selected states.
-- Performance Deck adds verified 3rd-down, 4th-down, penalties, possession, yards/play, and red-zone fields when the connected feed supplies them.
-- Team comparison expanded beyond basic yardage while preserving exact stat aliases.
-- Pregame/live/final phase labeling so available context is not automatically presented as live game data.
-- Scoreboard discovery now uses the Eastern Time calendar date rather than the server's local/UTC date.
-- Short scoreboard cache reduces repeated ESPN hydration calls on busy game windows.
-- Additional HTTP security headers.
-- Manual collection through GET `/api/collect` is disabled; the automatic collector remains active.
-- Dynamic play, drive, and scoring text is escaped before rendering in the main live surfaces.
-- Existing PostgreSQL archive, player box score, scoring summary, replay, history, back navigation, and live refresh remain intact.
+## Major changes
+- Browser-native internal routing with Back/Forward history for page + game + subtab + scroll state.
+- Five primary destinations only: Game Center, NFL Games, Players, Analytics, Archive; Settings stays in a bottom gear drawer.
+- NFL Games is a real workspace: Overview, Team Stats, Player Stats, Drive Chart, Play-by-Play swap content rather than scrolling through one giant page.
+- One structured provider game state controls Pregame / Live / Final presentation.
+- Game Center is intentionally compact: matchup, situation KPIs, leaders, current drive, latest play.
+- Player database with team/position filters, player profiles, verified game stat lines, and ESPN-hosted headshot fallback using provider athlete IDs.
+- Visualizations: cumulative scoring flow, scoring by quarter, drive chart.
+- Analytics: yards/play, points/drive, explosive-play rate, three-and-out rate. Derived metrics are explicitly marked `ƒ DERIVED` and show unavailable when inputs are missing.
+- Archive reconstructs stored games and saved score progression from PostgreSQL snapshots.
+- Feed text is HTML-escaped before dynamic rendering.
+- Live polling only runs while the selected game is in the provider's `in` state.
+- Collector uses structured provider state instead of matching status text.
+- Frontend split into `index.html`, `styles.css`, and `app.js` rather than one giant HTML file.
 
-## Data rule
-If a field cannot be mapped to a verified connected value, GRIDIRON ATLAS displays `—`. Derived displays must be clearly labeled and use only connected values.
+## Data integrity
+No synthetic football values are inserted. Feed values are marked/treated as connected data; calculated values are labeled derived. Missing inputs render as unavailable.
 
 ## Render
-Build command: `pip install -r requirements.txt`
-Start command: `python server.py`
-Keep `DATABASE_URL` private and in Render Environment only.
+Build: `pip install -r requirements.txt`
+Start: `python server.py`
+Keep `DATABASE_URL` private.

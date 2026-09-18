@@ -128,6 +128,9 @@ def _game_summary_from_package(gid):
         "id":str(gid),
         "date":comp.get("date") or (d.get("header") or {}).get("date"),
         "status":typ.get("shortDetail") or typ.get("description") or "Scheduled",
+        "state":typ.get("state") or "pre",
+        "completed":bool(typ.get("completed")),
+        "period":st.get("period") or 0,
         "teams":teams
     }
 
@@ -222,12 +225,11 @@ def game(gid,save=True):
 def collect_once():
     sb=scoreboard()
     for g in sb.get("games",[]):
-        st=(g.get("status") or "").lower()
-        # Collect live/final games. Status text varies by provider, so include common
-        # game-state words instead of depending only on Q1/Q2/etc.
-        if any(x in st for x in ["q1","q2","q3","q4","1st","2nd","3rd","4th","half","ot","final","end","in progress","halftime"]):
-            try:game(g["id"],True)
-            except Exception as e:LAST["error"]=str(e)
+        # Use the provider's structured game state instead of guessing from status text.
+        state=(g.get("state") or "").lower()
+        if state in {"in", "post"} or g.get("completed"):
+            try: game(g["id"], True)
+            except Exception as e: LAST["error"]=str(e)
     LAST["collector"]=int(time.time())
 def collector():
     while True:
@@ -242,7 +244,7 @@ def player_index():
         for p in g.get("players",[]):
             n=p.get("name"); 
             if not n:continue
-            out.setdefault(n,{"name":n,"team":p.get("team"),"position":p.get("position"),"games":[]})
+            out.setdefault(n,{"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"games":[]})
             out[n]["games"].append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
     return list(out.values())
 
@@ -283,7 +285,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"5.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

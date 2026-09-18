@@ -595,3 +595,36 @@ filterPlayers=function(){
 
 // 14.2 navigation polish + settings consolidation.
 const _route142=renderRoute;renderRoute=function(){_route142();document.body.dataset.atlasVersion='142';document.title='ATLAS 14.2 — FOOTBALL INTELLIGENCE';let gear=$('#settingsBtn');if(gear)gear.setAttribute('title','Settings & display');};
+
+/* ===== 14.3 PRODUCTION HARDENING ===== */
+const ATLAS143={slateBusy:false,rosterStarted:0};
+function rememberGame143(id){try{if(id)localStorage.setItem('atlasLastGameId',String(id))}catch(e){}}
+const _loadSelected143=loadSelected;loadSelected=async function(id,opts={}){let r=await _loadSelected143(id,opts);if(state.game)rememberGame143(id);return r};
+
+async function ensureSlate143(force=false){
+  if(ATLAS143.slateBusy)return ATLAS110.data;
+  if(!force && ATLAS110.data?.games?.length){state.games=ATLAS110.data.games;return ATLAS110.data}
+  ATLAS143.slateBusy=true;
+  try{
+    let d=await api('/api/week?season=2026&type=2&_='+Date.now());
+    if(d?.ok){ATLAS110.data=d;ATLAS110.week=d.week;state.games=d.games||[];return d}
+  }catch(e){console.warn('Slate bootstrap failed',e)}finally{ATLAS143.slateBusy=false}
+  return null;
+}
+function pickerLoading143(kind){return `<div class="emptyExperience142 hardening143"><header><div class="orb142">${kind==='lab'?'⌁':'✦'}</div><small class="eyebrow">ATLAS 14.3 · ${kind==='lab'?'RESEARCH WORKSPACE':'INTELLIGENCE ENGINE'}</small><h3>Loading the NFL slate…</h3><p>ATLAS is connecting this workspace directly to the current schedule and archive.</p></header><div class="pickerSkeleton143"><i></i><i></i><i></i></div></div>`}
+async function hydratePicker143(kind){let b=kind==='lab'?$('#lab10Body'):$('#intelBody130');if(!b||state.game)return;b.innerHTML=pickerLoading143(kind);let d=await ensureSlate143();if(!b||state.game)return;if(d?.games?.length){b.innerHTML=gamePicker142(kind);wirePicker142()}else{b.innerHTML=`<div class="emptyExperience142"><header><div class="orb142">!</div><small class="eyebrow">CONNECTION RECOVERY</small><h3>The NFL slate is temporarily unavailable.</h3><p>Your archived games remain safe. Retry the schedule connection without leaving this workspace.</p><button class="retry143" id="retrySlate143">Retry schedule</button></header></div>`;$('#retrySlate143').onclick=()=>hydratePicker143(kind)}}
+const _intel143=renderIntelligence130;renderIntelligence130=function(){if(!state.game){hydratePicker143('intelligence');return}_intel143()};
+const _lab143=renderLab10;renderLab10=function(){if(!state.game){hydratePicker143('lab');return}_lab143()};
+
+// Player directory recovery: show progress, timeouts and an explicit retry instead of an endless loading message.
+loadPlayerDb=async function(){
+  let host=$('#playerDb');if(!host)return;ATLAS143.rosterStarted=Date.now();
+  host.innerHTML='<div class="playerLoad143"><div class="spinner143"></div><div><b>Building Player Universe</b><span>Loading all 32 active NFL rosters and verified depth-chart data…</span></div></div>';
+  let slow=setTimeout(()=>{if(host&&host.querySelector('.playerLoad143'))host.querySelector('span').textContent='Still working — first load can take longer while team rosters are cached.'},8000);
+  try{let d=await api('/api/players?_='+Date.now());clearTimeout(slow);state.players=d.players||[];let teams=[...new Set(state.players.map(x=>x.team).filter(Boolean))].sort(),pos=[...new Set(state.players.map(x=>x.position).filter(Boolean))].sort();$('#playerTeam').innerHTML='<option value="">All teams</option>'+teams.map(x=>`<option>${esc(x)}</option>`).join('');$('#playerPos').innerHTML='<option value="">All positions</option>'+pos.map(x=>`<option>${esc(x)}</option>`).join('');ATLAS142.playerPage=1;filterPlayers()}catch(e){clearTimeout(slow);host.innerHTML='<div class="emptyExperience143"><b>Player Universe could not finish loading.</b><span>The rest of ATLAS is still available.</span><button id="retryPlayers143">Retry rosters</button></div>';$('#retryPlayers143').onclick=loadPlayerDb}}
+
+// The Home week should always resolve from the provider when the user returns to Live.
+const _renderRoute143=renderRoute;renderRoute=function(){_renderRoute143();document.body.dataset.atlasVersion='143';document.title='ATLAS 14.3 — PRODUCTION HARDENING';if(state.view==='home' && !state.game){ensureSlate143(true).then(()=>renderWeek110())}};
+
+// Restore the most recently opened game across ATLAS workspaces when possible.
+window.addEventListener('DOMContentLoaded',()=>{try{let id=localStorage.getItem('atlasLastGameId');if(id&&!state.game&&validGameId(id)){state.gameId=id;loadSelected(id,{restart:false}).catch(()=>{})}}catch(e){}});

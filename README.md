@@ -1,14 +1,15 @@
-# ATLAS 14 — FOOTBALL INTELLIGENCE
+# GRIDIRON ATLAS 14.3 — Production Hardening
 
-A visual redesign of the ATLAS NFL analytics application, built directly on the 13.0 Intelligence Engine.
+Built on ATLAS 14.2 Product Experience.
 
-## 14.0 interface refresh
-- New graphite / midnight / ice-blue palette.
-- New ATLAS globe-style identity mark and simplified ATLAS branding.
-- “SEE A DEEPER GAME” command-center hero.
-- Website-style navigation, tabs, buttons, inputs, hover states and card hierarchy.
-- Quick-access Football Intelligence feature strip.
-- Existing live feed, archives, Intelligence Engine, player/team tools, labs, film room and data-integrity behavior retained.
+## 14.3 changes
+- Intelligence and Research Lab bootstrap the NFL slate themselves; visiting Live first is no longer required.
+- Direct retry/recovery state when the schedule provider is unavailable.
+- Player Universe now has explicit progress, slow-load messaging, failure recovery, and retry instead of an indefinite importer state.
+- Live/Home re-resolves the provider's current week instead of trusting a previously browsed week.
+- The most recently selected game is remembered across ATLAS workspaces and browser reloads.
+- Cross-workspace game selection continues to use the same selected-game state.
+- Added production loading skeletons and restrained transitions without changing the 14.2 visual identity.
+- Data engine and archive behavior preserved.
 
-## Deploy
-This package remains Render-ready using the existing `render.yaml` and Python server.
+Validation: `node --check app/app.js` and `python -m py_compile server.py` passed.

@@ -268,3 +268,32 @@ renderTeamUniverse10=function(d=leagueData){_renderTeamUniverse101(d);let ab=ATL
 if($('#playerSearch'))$('#playerSearch').oninput=()=>filterPlayers();
 if($('#playerTeam'))$('#playerTeam').onchange=()=>filterPlayers();
 if($('#playerPos'))$('#playerPos').onchange=()=>filterPlayers();
+
+/* ===== 10.3 TEAM + PLAYER DATA REPAIR ===== */
+const _renderTeamUniverse103=renderTeamUniverse10;
+renderTeamUniverse10=function(d=leagueData){
+  _renderTeamUniverse103(d);
+  const ab=ATLAS10.team,host=$('#teamUniverseBody'); if(!host)return;
+  const card=document.createElement('div');card.className='card seasonTeamStats103';
+  card.innerHTML='<div class="cardHead"><b>2026 Team Stats</b><span class="badge">REGULAR SEASON</span></div><div class="cardBody" id="seasonTeamStats103"><div class="empty">Loading verified team totals…</div></div>';
+  const roster=host.querySelector('.primeUniverseRoster'); if(roster) host.insertBefore(card,roster); else host.appendChild(card);
+  api('/api/teamstats?team='+encodeURIComponent(ab)).then(r=>{
+    const el=$('#seasonTeamStats103');if(!el)return;
+    if(!r.ok||!(r.stats||[]).length){el.innerHTML='<div class="empty"><b>Team season totals unavailable.</b><small>Atlas will not substitute game-sample data for missing season totals.</small></div>';return}
+    const groups={};(r.stats||[]).forEach(s=>(groups[s.category||'Team']??=[]).push(s));
+    el.innerHTML='<div class="teamStatGroups103">'+Object.entries(groups).slice(0,8).map(([cat,vals])=>`<section><small>${esc(cat)}</small><div>${vals.slice(0,14).map(s=>`<span><em>${esc(s.label)}</em><b>${esc(s.value)}</b></span>`).join('')}</div></section>`).join('')+'</div><p class="profileSource">'+esc(r.source||'ESPN season feed')+'</p>';
+  }).catch(()=>{let el=$('#seasonTeamStats103');if(el)el.innerHTML='<div class="empty">Team-stat source could not be reached.</div>'});
+};
+
+const _showProfile103=showProfile;
+showProfile=async function(p){
+  await _showProfile103(p);
+  const box=$('#playerProfile');if(!box||!p||!p.id)return;
+  try{
+    const d=await api('/api/player?id='+encodeURIComponent(p.id)); if(!d.ok)return;
+    const pl=d.player||{}, empty=box.querySelector('.statEmpty');
+    if(empty && (pl.stats_attempt_errors||[]).length){
+      const small=empty.querySelector('small'); if(small)small.textContent='No 2026 season total was returned for this athlete. Checked: '+pl.stats_attempt_errors.join(' · ')+'. Missing data remains —.';
+    }
+  }catch(e){}
+};

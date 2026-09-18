@@ -534,8 +534,8 @@ def _flatten_stats(raw):
             seen.add(k);clean.append(x)
     return clean[:160]
 
-def _season_stats(aid):
-    """Try multiple verified public ESPN stat surfaces; never turn missing into zero."""
+def _season_stats_102(aid):
+    """Legacy 10.2 fallback."""
     attempts=[
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_WEB_ATHLETE_STATS_2026"),
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats","ESPN_WEB_ATHLETE_STATS"),
@@ -775,6 +775,67 @@ def _league_structure(standings, leaders, profiles):
                 team_leaders[ab].append({'category':cat,'name':x.get('name'),'value':x.get('value')})
     return {'alignment':NFL_ALIGNMENT,'conferences':conferences,'divisions':divisions,'power':power,'teamLeaders':team_leaders}
 
+def _team_season_stats(team):
+    """Verified 2026 regular-season team totals from ESPN Core."""
+    team=str(team or '').upper()
+    if team not in TEAM_IDS:return {"ok":False,"team":team,"stats":[],"error":"Unknown NFL team"}
+    tid=TEAM_IDS[team]
+    attempts=[
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/{tid}/statistics","ESPN_CORE_TEAM_STATS_2026"),
+      (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{tid}?enable=stats","ESPN_SITE_TEAM_STATS_2026"),
+    ]
+    errs=[]
+    for url,src in attempts:
+        try:
+            raw=fetch(url,src); rows=_flatten_stats(raw)
+            if rows:return {"ok":True,"team":team,"stats":rows,"source":src,"updated":int(time.time())}
+        except Exception as e:errs.append(f"{src}:{type(e).__name__}")
+    return {"ok":False,"team":team,"stats":[],"source":None,"errors":errs,"updated":int(time.time())}
+
+def _core_stat_rows(raw):
+    """Normalize the season-scoped Core athlete statistics schema first, then fall back."""
+    rows=[]
+    cats=((raw.get('splits') or {}).get('categories') or []) if isinstance(raw,dict) else []
+    for cat in cats:
+        cname=cat.get('displayName') or cat.get('name') or 'Season'
+        for st in cat.get('stats') or []:
+            if not isinstance(st,dict):continue
+            label=st.get('displayName') or st.get('shortDisplayName') or st.get('name') or st.get('abbreviation')
+            val=st.get('displayValue')
+            if val is None:val=st.get('value')
+            if label and val is not None:rows.append({'category':cname,'label':str(label),'value':val,'abbr':st.get('abbreviation'),'rank':st.get('rank')})
+    return rows or _flatten_stats(raw)
+
+def _season_stats(aid):
+    """10.3: Core season-scoped athlete stats first; web surfaces are fallback only."""
+    attempts=[
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{aid}/statistics","ESPN_CORE_SEASON_ATHLETE_STATS_2026"),
+      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_WEB_ATHLETE_STATS_2026"),
+      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats","ESPN_WEB_ATHLETE_STATS"),
+    ]
+    errors=[]
+    for url,src in attempts:
+        try:
+            raw=fetch(url,src); rows=_core_stat_rows(raw)
+            if rows:return rows,src,errors
+            errors.append(src+':empty')
+        except Exception as e:errors.append(src+':'+type(e).__name__)
+    # Final fallback: statisticslog can point to the exact season total resource.
+    try:
+        log=fetch(f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/{aid}/statisticslog","ESPN_CORE_STATISTICSLOG")
+        for entry in log.get('entries') or []:
+            season_ref=((entry.get('season') or {}).get('$ref') or '')
+            if '/seasons/2026' not in season_ref:continue
+            for st in entry.get('statistics') or []:
+                ref=((st.get('statistics') or {}).get('$ref') or '') if isinstance(st.get('statistics'),dict) else ''
+                if ref:
+                    try:
+                        raw=fetch(ref.replace('http://','https://'),'ESPN_CORE_STATISTICSLOG_TOTAL_2026');rows=_core_stat_rows(raw)
+                        if rows:return rows,'ESPN_CORE_STATISTICSLOG_TOTAL_2026',errors
+                    except Exception as e:errors.append('ESPN_CORE_STATISTICSLOG_TOTAL_2026:'+type(e).__name__)
+    except Exception as e:errors.append('ESPN_CORE_STATISTICSLOG:'+type(e).__name__)
+    return [],None,errors
+
 def league_hq():
     now=time.time()
     if LEAGUE_CACHE['value'] and now-LEAGUE_CACHE['ts']<LEAGUE_CACHE_SECONDS:return LEAGUE_CACHE['value']
@@ -833,9 +894,13 @@ class H(SimpleHTTPRequestHandler):
             aid=(q.get("id") or [""])[0]
             try:return self.sendj(player_profile(aid))
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/teamstats":
+            team=(q.get("team") or [""])[0]
+            try:return self.sendj(_team_season_stats(team))
+            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.3","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

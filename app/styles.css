@@ -91,3 +91,15 @@ body{background:radial-gradient(circle at 72% -12%,#123a5d 0,transparent 30%),li
 @media(max-width:1000px){.primeBio{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.rail{width:72px}.app{margin-left:72px}}
 @media(max-width:600px){.primeIdentity{align-items:center;flex-direction:column;text-align:center}.primeIdentity img{width:120px;height:120px}.primeBio{grid-template-columns:repeat(2,1fr)}}
+
+/* ===== 10.3 BLUE PRIME — interface consolidation ===== */
+:root{--atlas-blue:#3aa7ff;--atlas-cyan:#6ee7ff;--atlas-navy:#07111f;--atlas-panel:#0c1726;--atlas-panel2:#101e30;--atlas-line:#20344d;--atlas-soft:#9eb1c6}
+body{background:radial-gradient(circle at 72% -12%,rgba(58,167,255,.16),transparent 34%),linear-gradient(180deg,#06101c,#08111c 45%,#07101a);color:#f4f8fc}
+.rail{background:rgba(5,14,25,.96);border-color:var(--atlas-line)}.brandMark{background:linear-gradient(135deg,var(--atlas-cyan),#4b7cff);box-shadow:0 0 26px rgba(58,167,255,.34)}
+.nav button:hover,.nav button.active{background:rgba(58,167,255,.12);color:#83d7ff}.nav button.active{box-shadow:inset 3px 0 0 var(--atlas-blue)}
+.card,.kpi,.gameCard,.back,.gear{border-color:var(--atlas-line)}.card{background:linear-gradient(180deg,rgba(15,29,46,.96),rgba(9,20,33,.96));box-shadow:0 12px 38px rgba(0,0,0,.12)}
+.top{background:rgba(5,14,25,.88);border-color:var(--atlas-line)}.eyebrow,.accent,.linkBtn{color:#73d1ff}.dot{background:#58c8ff;box-shadow:0 0 12px #58c8ff}
+.workspaceTabs button.active{background:#55bfff;border-color:#55bfff;color:#03101a}.phase{border-color:#4bb9ff66;color:#7bd5ff}.hero{background:linear-gradient(120deg,#0e1d2d,#0a1624 58%,#10294a);border-color:var(--atlas-line)}
+.title{letter-spacing:-.045em}.cardHead{background:rgba(255,255,255,.015)}
+.teamStatGroups103{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.teamStatGroups103 section{padding:14px;border:1px solid var(--atlas-line);border-radius:15px;background:rgba(3,12,22,.32)}.teamStatGroups103 section>small{display:block;color:#78cffb;font-weight:900;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}.teamStatGroups103 section>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.teamStatGroups103 span{padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.035);display:flex;justify-content:space-between;gap:8px}.teamStatGroups103 em{font-style:normal;color:var(--atlas-soft);font-size:11px}.teamStatGroups103 b{font-size:13px}.primeProfile{max-width:1220px;margin:auto}.primeIdentity{min-height:190px;background:linear-gradient(120deg,rgba(58,167,255,.09),rgba(255,255,255,.018));border-radius:22px}.primeSeason{margin-top:14px}.profileStatGroup>div{gap:8px}.profileStatGroup span{border:1px solid rgba(103,190,255,.1)}
+@media(max-width:760px){.teamStatGroups103{grid-template-columns:1fr}.teamStatGroups103 section>div{grid-template-columns:1fr}}

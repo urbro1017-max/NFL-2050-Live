@@ -1,6 +1,6 @@
-# GRIDIRON ATLAS 10.2 — PLAYER ENGINE
+# GRIDIRON ATLAS 10.3 — BLUE PRIME
 
-10.2 fixes the missing player-stat layer from PRIME while continuing the blue PRIME interface direction.
+10.3 repairs team-season statistics and strengthens player-stat retrieval while consolidating the BLUE PRIME interface.
 
 ## Major changes
 - Multi-source 2026 player-stat resolver: ESPN Web athlete stats -> unfiltered athlete stats -> ESPN Core season/type statistics -> season athlete statistics fallback.

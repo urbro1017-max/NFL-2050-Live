@@ -1,5 +1,7 @@
-# ATLAS 15.2 — OBSIDIAN
+# ATLAS 16.0
+Complete Render-ready build. Deploy as a replacement for the previous ATLAS package.
 
-Complete Render-ready build. Rebuilt visual system with a charcoal / warm-metal palette, revised typography, cleaner controls, and a front-office-first GM Lab. Includes ATLAS 15.1 All Teams mode and all prior production-hardening work.
+Start: `gunicorn server:app`
+Health: `/api/health`
 
-Deploy this package by itself.
+This package includes the full existing application and the ATLAS 16 experimental front-office expansion. Experimental derived surfaces remain roster-data-driven; unsupported contract, cap, draft and tracking data are not fabricated.

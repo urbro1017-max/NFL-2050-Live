@@ -574,6 +574,18 @@ def _game_log(aid):
         except Exception: pass
     return {"events":[],"stats":[],"source":None}
 
+def _captured_player_games(aid,name=None,team=None):
+    """Return one normalized Atlas archive row per unique game for a player."""
+    rows=[]
+    for gm in STORE.games():
+        g=STORE.game(gm["id"]) or {}
+        for p in g.get("players",[]) or []:
+            same_id=aid and str(p.get("id") or "")==str(aid)
+            same_name=name and p.get("name")==name and (not team or p.get("team")==team)
+            if not (same_id or same_name): continue
+            rows.append({"game_id":str(g.get("id") or gm["id"]),"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats") or {}})
+    return _merge_captured_game_rows(rows)
+
 def player_profile(aid):
     aid=str(aid or "")
     if not aid.isdigit():return {"ok":False,"error":"Invalid athlete id"}
@@ -598,12 +610,13 @@ def player_profile(aid):
     pname=a.get("fullName") or a.get("displayName")
     stats,stats_source,stat_errors,captured_stats,captured_games=_season_stats(aid,pname,team_ab)
     gamelog=_game_log(aid)
+    archive_games=_captured_player_games(aid,pname,team_ab)
     depth_row={}
     if team_ab in TEAM_IDS:
         try:
             rd=team_roster(team_ab);depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
         except Exception:pass
-    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_status":"verified" if stats else "unavailable","stats_attempt_errors":stat_errors,"captured_stats":captured_stats,"captured_games":captured_games,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
+    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_status":"verified" if stats else "unavailable","stats_attempt_errors":stat_errors,"captured_stats":captured_stats,"captured_games":captured_games,"archive_games":archive_games,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
     with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
     return value
 
@@ -624,7 +637,7 @@ def _merge_captured_game_rows(rows):
     return list(grouped.values())
 
 def player_index():
-    # 10.7: all active team rosters remain the directory, but archived box-score
+    # 10.8: all active team rosters remain the directory, but archived box-score
     # category rows are collapsed into unique games before reaching the browser.
     out={}
     errors=[]
@@ -1001,7 +1014,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.7","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.8","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

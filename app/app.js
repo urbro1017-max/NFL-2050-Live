@@ -336,7 +336,7 @@ overview=function(g){if(!isFinal105(g))return _overview105(g);let a=team(g,'away
 document.addEventListener('click',e=>{let t=e.target.closest('.score .team');if(t&&state.game){let ab=t.classList.contains('right')?team(state.game,'home').abbr:team(state.game,'away').abbr;ATLAS10.team=ab;route({view:'teams10'})}});
 
 /* ===== 10.6 PLAYER DATA ENGINE + PRODUCT POLISH ===== */
-const ATLAS106={version:'10.6'};
+const ATLAS106={version:'10.8'};
 function statGroups106(rows){const g={};(rows||[]).forEach(s=>(g[s.category||'Stats']??=[]).push(s));return g}
 function statMarkup106(rows){const g=statGroups106(rows);return Object.entries(g).slice(0,7).map(([cat,vals])=>`<div class="profileStatGroup"><small>${esc(cat)}</small><div>${vals.slice(0,14).map(s=>`<span><em>${esc(s.label)}</em><b>${esc(s.value)}</b></span>`).join('')}</div></div>`).join('')}
 const _showProfile106=showProfile;
@@ -414,3 +414,38 @@ showProfile=async function(p){
     const body=captured.querySelector('.cardBody');if(body){body.className='cardBody capturedGamesGrid107';body.innerHTML=capturedGamesMarkup107(games)}
   }
 };
+
+
+/* ===== 10.8 PLAYER UNIVERSE — AUTHORITATIVE PROFILE RENDERER ===== */
+const PLAYER108={tab:'overview'};
+function flatCat108(g,cat){let hit=Object.entries(g?.categories||{}).find(([k])=>String(k).toLowerCase().includes(cat));return hit?hit[1]:{}}
+function n108(v){let n=Number(String(v??'').replaceAll(',','').replace('%',''));return Number.isFinite(n)?n:null}
+function pick108(o,...keys){for(const k of keys){let e=Object.entries(o||{}).find(([x])=>String(x).toUpperCase()===k.toUpperCase());if(e)return e[1]}return null}
+function capturedSummary108(games){
+ const fs=(games||[]).filter(g=>finalish107(g.status)), out={games:fs.length};
+ for(const g of fs){for(const [cat,st] of Object.entries(g.categories||{})){for(const [k,v] of Object.entries(st||{})){let n=n108(v);if(n==null||!additive107(k))continue;let key=cat.toLowerCase()+'|'+k.toUpperCase();out[key]=(out[key]||0)+n}}}
+ return out;
+}
+function headline108(pl,games){const s=capturedSummary108(games),pos=String(pl.position||'').toUpperCase();let cards=[];
+ const val=(cat,k)=>s[cat+'|'+k]; const C=(l,v,sub='ATLAS CAPTURED')=>`<div class="headline108"><small>${esc(l)}</small><b>${v==null?'—':esc(v)}</b><span>${esc(sub)}</span></div>`;
+ if(pos==='QB'){let cmp=val('passing','C/ATT'),yd=val('passing','YDS'),td=val('passing','TD'),ints=val('passing','INT');cards=[C('Pass yards',yd),C('Pass TD',td),C('INT',ints),C('Rush yards',val('rushing','YDS'))]}
+ else if(['RB','FB'].includes(pos)){cards=[C('Rush yards',val('rushing','YDS')),C('Carries',val('rushing','CAR')),C('Rush TD',val('rushing','TD')),C('Rec yards',val('receiving','YDS'))]}
+ else if(['WR','TE'].includes(pos)){cards=[C('Rec yards',val('receiving','YDS')),C('Receptions',val('receiving','REC')),C('Targets',val('receiving','TGTS')??val('receiving','TAR')),C('Rec TD',val('receiving','TD'))]}
+ else {cards=[C('Games captured',s.games),C('Tackles',val('defensive','TOT')??val('defense','TOT')),C('Sacks',val('defensive','SACKS')??val('defense','SACKS')),C('Takeaways',(val('defensive','INT')||0)+(val('defensive','FF')||0))]}
+ return cards.join('');
+}
+function profileTabs108(){return `<div class="playerTabs108"><button data-ptab="overview">Overview</button><button data-ptab="games">Game Log</button><button data-ptab="trends">Trends</button><button data-ptab="splits">Splits</button></div>`}
+function categoryGrid108(groups){return Object.entries(groups||{}).map(([cat,st])=>`<section class="statSection108"><h4>${esc(cat)}</h4><div>${Object.entries(st||{}).map(([k,v])=>`<span><small>${esc(k)}</small><b>${esc(v)}</b></span>`).join('')}</div></section>`).join('')}
+function gameLog108(games){if(!games.length)return '<div class="empty">No Atlas games captured for this player yet.</div>';return `<div class="gameLog108">${games.slice().reverse().map((g,i)=>`<button class="gameRow108" data-game108="${esc(g.game_id)}"><span><small>GAME ${esc(g.game_id)}</small><b>${esc(g.status||'GAME')}</b></span><span class="gameCats108">${Object.entries(g.categories||{}).map(([cat,st])=>`<em>${esc(cat)} · ${Object.entries(st).slice(0,3).map(([k,v])=>`${k} ${v}`).join(' · ')}</em>`).join('')}</span><strong>Open game →</strong></button>`).join('')}</div>`}
+function trend108(games,pl){let rows=games.filter(g=>finalish107(g.status));if(rows.length<2)return `<div class="empty">Trend charts unlock after Atlas captures at least 2 unique final games for ${esc(pl.name)}.</div>`;let pos=String(pl.position||'').toUpperCase(),cat=pos==='QB'?'passing':(['RB','FB'].includes(pos)?'rushing':(['WR','TE'].includes(pos)?'receiving':'defensive')), key='YDS';let pts=rows.map((g,i)=>({i:i+1,v:n108(pick108(flatCat108(g,cat),key))||0}));let mx=Math.max(1,...pts.map(x=>x.v));return `<div class="trendChart108">${pts.map(x=>`<div><i style="height:${Math.max(5,x.v/mx*100)}%"></i><b>${esc(x.v)}</b><small>G${x.i}</small></div>`).join('')}</div><p class="micro108">Verified Atlas archive · ${esc(cat)} ${esc(key)} by captured game</p>`}
+function split108(games){let totals={};for(const g of games.filter(g=>finalish107(g.status))){for(const [cat,st] of Object.entries(g.categories||{})){for(const [k,v] of Object.entries(st)){let n=n108(v);if(n==null||!additive107(k))continue;(totals[cat]??={})[k]=((totals[cat]||{})[k]||0)+n}}}return Object.keys(totals).length?categoryGrid108(totals):'<div class="empty">No additive Atlas splits available yet.</div>'}
+async function showPlayerUniverse108(p){
+ if(!p)return;const box=$('#playerProfile');if(!box)return;box.innerHTML='<div class="card"><div class="cardBody empty">Building Player Universe…</div></div>';
+ let pl={...p};try{if(p.id){let d=await api('/api/player?id='+encodeURIComponent(p.id)+'&_='+Date.now());if(d.ok)pl={...p,...d.player}}}catch(e){}
+ const games=uniqueCapturedGames107(pl.archive_games||p.games||[]), finals=games.filter(g=>finalish107(g.status));
+ const seasonGroups=statGroups106(pl.stats||[]), agg=aggregateCaptured107(finals), aggGroups=statGroups106(agg);
+ box.innerHTML=`<div class="playerUniverse108" style="--pc:${TEAM_COLORS[pl.team]||'#3aa7ff'}"><header class="playerHero108"><img src="${esc(pl.headshot||playerImg(pl))}" onerror="this.style.display='none'"><div><span>${esc(pl.team||'NFL')} · ${esc(pl.position||'PLAYER')}</span><h2>${esc(pl.name||'Player')}</h2><p>${pl.jersey?'#'+esc(pl.jersey)+' · ':''}${esc(pl.position_name||pl.position||'')} ${pl.starter?' · ★ DEPTH 1':''}</p></div><aside><small>ATLAS COVERAGE</small><b>${finals.length}</b><span>unique final game${finals.length===1?'':'s'}</span></aside></header><div class="bioRail108"><span><small>EXP</small><b>${pl.experience==null?'—':esc(pl.experience)+' yrs'}</b></span><span><small>COLLEGE</small><b>${esc(pl.college||'—')}</b></span><span><small>AGE</small><b>${esc(pl.age||'—')}</b></span><span><small>HEIGHT</small><b>${esc(pl.height||'—')}</b></span><span><small>WEIGHT</small><b>${esc(pl.weight||'—')}</b></span></div>${profileTabs108()}<div class="headlineGrid108">${headline108(pl,finals)}</div><main id="playerPane108"></main></div>`;
+ const render=()=>{let pane=$('#playerPane108');$$('.playerTabs108 button').forEach(b=>b.classList.toggle('active',b.dataset.ptab===PLAYER108.tab));if(PLAYER108.tab==='overview'){let hasSeason=Object.keys(seasonGroups).length;pane.innerHTML=`<div class="coverageBanner108 ${hasSeason?'verified':''}"><div><small>${hasSeason?'FULL-SEASON PROVIDER DATA':'ATLAS VERIFIED SAMPLE'}</small><b>${hasSeason?esc(pl.stats_source||'2026 REGULAR SEASON'):`${finals.length} UNIQUE FINAL GAME${finals.length===1?'':'S'}`}</b></div><p>${hasSeason?'Provider-supplied 2026 season statistics.':'Full-season provider totals are unavailable, so Atlas shows only production it has directly captured. It is never labeled as a complete season total.'}</p></div><div class="statSections108">${hasSeason?categoryGrid108(Object.fromEntries(Object.entries(seasonGroups).map(([c,rows])=>[c,Object.fromEntries(rows.map(r=>[r.label,r.value]))]))):categoryGrid108(Object.fromEntries(Object.entries(aggGroups).map(([c,rows])=>[c,Object.fromEntries(rows.map(r=>[r.label,r.value]))])))}</div>`}else if(PLAYER108.tab==='games')pane.innerHTML=gameLog108(games);else if(PLAYER108.tab==='trends')pane.innerHTML=trend108(games,pl);else pane.innerHTML=split108(games);$$('.gameRow108').forEach(b=>b.onclick=()=>{state.gameId=b.dataset.game108;route({view:'home'});loadGame(state.gameId)});};
+ $$('.playerTabs108 button').forEach(b=>b.onclick=()=>{PLAYER108.tab=b.dataset.ptab;render()});render();
+}
+showProfile=showPlayerUniverse108;

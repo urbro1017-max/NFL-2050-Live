@@ -1,3 +1,12 @@
-# GRIDIRON ATLAS 10.7 — ATLAS PLAYER ARCHIVE
+# GRIDIRON ATLAS 10.8 — PLAYER UNIVERSE
 
-10.7 fixes player game accounting and makes Atlas-captured box scores a first-class verified fallback. ESPN box-score category rows are collapsed into unique games, captured counting stats are aggregated without summing rates/averages, and player profiles show one card per real game. Full-season provider totals remain source-gated when unavailable.
+Large player-system overhaul built on the verified Atlas archive.
+
+- One authoritative player renderer (no legacy wrapper chain at runtime)
+- Atlas archive games returned directly with the player profile
+- Overview / Game Log / Trends / Splits workspaces
+- Position-aware headline stats
+- Honest Atlas coverage labeling when full-season provider totals are unavailable
+- Clickable archived games back into Game Center
+- 10.4+ Blue PRIME visual language retained and refined
+- Missing or unverifiable data remains —

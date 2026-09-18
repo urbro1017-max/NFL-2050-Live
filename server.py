@@ -501,6 +501,50 @@ def _atlas_team_profiles():
         n=r['games'] or 1;r['ppg']=r['pf']/n;r['ypg']=r['yards']/n if r['yards'] else None;r['yapg']=r['ya']/n if r['ya'] else None;out.append(r)
     return sorted(out,key=lambda x: (-(x.get('ppg') or 0),x['abbr']))
 
+
+NFL_ALIGNMENT = {
+'AFC East':['BUF','MIA','NE','NYJ'],'AFC North':['BAL','CIN','CLE','PIT'],'AFC South':['HOU','IND','JAX','TEN'],'AFC West':['DEN','KC','LV','LAC'],
+'NFC East':['DAL','NYG','PHI','WAS'],'NFC North':['CHI','DET','GB','MIN'],'NFC South':['ATL','CAR','NO','TB'],'NFC West':['ARI','LA','SF','SEA']}
+ALIGN_BY_TEAM={ab:{'conference':div.split()[0],'division':div} for div,teams in NFL_ALIGNMENT.items() for ab in teams}
+
+def _num(v, default=0.0):
+    try:return float(str(v).replace('%','').replace(',',''))
+    except:return default
+
+def _league_structure(standings, leaders, profiles):
+    by={r.get('abbr'):dict(r) for r in standings if r.get('abbr')}
+    prof={r.get('abbr'):r for r in profiles if r.get('abbr')}
+    for ab,r in by.items():
+        r.update(ALIGN_BY_TEAM.get(ab,{}))
+        rec=str(r.get('record') or '0-0').split('-')
+        w=_num(rec[0] if rec else 0); l=_num(rec[1] if len(rec)>1 else 0); t=_num(rec[2] if len(rec)>2 else 0)
+        gp=max(1,w+l+t); pct=(w+.5*t)/gp
+        diff=_num(r.get('diff')); p=prof.get(ab,{})
+        # Transparent Atlas Index: record dominates; point differential and verified stored-game efficiency are modest modifiers.
+        ypg=_num(p.get('ypg')); yapg=_num(p.get('yapg')); efficiency=(ypg-yapg) if ypg and yapg else 0
+        r['atlasIndex']=round(100*pct + max(-15,min(15,diff/gp))*0.8 + max(-10,min(10,efficiency/25)),1)
+    # ranks are descriptive Atlas calculations, not external predictions
+    power=sorted(by.values(),key=lambda r:(-r.get('atlasIndex',0),-_num(r.get('diff')),r.get('abbr','')))
+    for i,r in enumerate(power,1):r['atlasRank']=i
+    conferences={}; divisions={}
+    for conf in ('AFC','NFC'):
+        rows=[r for r in by.values() if r.get('conference')==conf]
+        rows.sort(key=lambda r:(-_num(r.get('winPct')),-_num(r.get('diff')),r.get('abbr','')))
+        conferences[conf]=rows
+    for div,teams in NFL_ALIGNMENT.items():
+        rows=[by[x] for x in teams if x in by]
+        rows.sort(key=lambda r:(-_num(r.get('winPct')),-_num(r.get('diff')),r.get('abbr','')))
+        divisions[div]=rows
+    # Team leaders from the season leader feed: preserve provider categories and entries, grouped by team.
+    team_leaders={ab:[] for ab in by}
+    for group in leaders or []:
+        cat=group.get('name') or 'Leader'
+        for x in group.get('leaders') or []:
+            ab=x.get('team')
+            if ab in team_leaders and len(team_leaders[ab])<16:
+                team_leaders[ab].append({'category':cat,'name':x.get('name'),'value':x.get('value')})
+    return {'alignment':NFL_ALIGNMENT,'conferences':conferences,'divisions':divisions,'power':power,'teamLeaders':team_leaders}
+
 def league_hq():
     now=time.time()
     if LEAGUE_CACHE['value'] and now-LEAGUE_CACHE['ts']<LEAGUE_CACHE_SECONDS:return LEAGUE_CACHE['value']
@@ -509,7 +553,8 @@ def league_hq():
     except Exception as e:errors.append('standings:'+type(e).__name__)
     try:leaders=_leaders_feed()
     except Exception as e:errors.append('leaders:'+type(e).__name__)
-    out={'season':2026,'standings':standings,'leaders':leaders,'teams':_atlas_team_profiles(),'errors':errors,'source':'ESPN_PUBLIC_SEASON_FEEDS+ATLAS_VERIFIED_STORE','updated':int(now)}
+    profiles=_atlas_team_profiles(); structure=_league_structure(standings,leaders,profiles)
+    out={'season':2026,'standings':standings,'leaders':leaders,'teams':profiles,**structure,'errors':errors,'source':'ESPN_PUBLIC_SEASON_FEEDS+ATLAS_VERIFIED_STORE','updated':int(now)}
     LEAGUE_CACHE.update(ts=now,value=out);return out
 
 def legacy_live():
@@ -542,7 +587,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.7","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.9","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

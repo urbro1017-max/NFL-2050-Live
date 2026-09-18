@@ -1,12 +1,21 @@
-# GRIDIRON ATLAS 6.7 — MAX ATLAS
+# GRIDIRON ATLAS 6.9 — LEAGUE EMPIRE
 
-The largest Atlas build yet.
+A live NFL analytics platform with game-state fusion, game/players/team analytics, War Room, and expanded league intelligence.
 
-- 2.5-second default live polling with newest-state fusion preserved from 6.4.
-- New League HQ with standings, Team Lab, league leaders, defense command, and a source-gated Next Gen Lab.
-- Larger Analytics workspace with score flow, quarter scoring, drive efficiency, production split, live leaders, and defensive snapshot.
-- Team-colored matchup UI retained.
-- Season feeds are cached separately from live games so live polling stays fast.
-- Atlas never fabricates unavailable metrics: missing data displays as `—`.
-- Next Gen Stats placeholders remain source-gated until a verified tracking-data source is connected.
-- Gambling/odds features are intentionally not included.
+## 6.9 additions
+- Division Control Center: all 8 NFL divisions and their teams
+- AFC/NFC Conference Command
+- Current division and conference leaders from season standings
+- Atlas Index: transparent performance rating based primarily on record, with point differential and verified stored-game efficiency as modifiers
+- 32-team Team Lab
+- Team Leaders grouped from season leader feeds
+- NFL season leader boards
+- Defensive Command
+- Championship Picture: factual conference ordering only; no betting odds or outcome probabilities
+- Next Gen Lab remains source-gated; unsupported tracking metrics display —
+
+## Data integrity
+Provider values are displayed as supplied. Derived metrics are labeled. Missing values remain unavailable rather than being fabricated. Early-season rankings should be interpreted with their small sample size in mind.
+
+## Deploy
+Keep the existing Render service and environment variables. Build command: `pip install -r requirements.txt`. Start command: `python server.py`.

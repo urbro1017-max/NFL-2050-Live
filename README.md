@@ -1,21 +1,23 @@
-# GRIDIRON ATLAS 4.0 — Command Center
+# GRIDIRON ATLAS 5.0 — Clean System Overhaul
 
-The largest interface overhaul so far, built on the existing live-game engine and PostgreSQL archive.
+A stability-first overhaul of the 4.0 Command Center.
 
-## 4.0 highlights
-- New command-center shell with a fixed top context deck and redesigned left control rail.
-- Real Back button with in-app page history. Alt+Left also navigates back.
-- Condensed five-destination primary navigation: Game Center, NFL Games, Players, Analytics, Archive.
-- Settings remains a gear at the bottom of the rail.
-- NFL game sub-navigation renamed and rebuilt as a sticky segmented control: Overview, Team Stats, Player Stats, Play-by-Play, Drive Chart.
-- Stronger hierarchy, larger typography, glass/obsidian surfaces, acid-lime/violet accents, ambient grid, improved cards, spacing, responsive behavior, and overflow handling.
-- Quick NFL Games action in the top command deck; Alt+G opens NFL Games.
-- Existing verified-feed rule, ESPN provider integration, live engine, player stats, game intelligence, archive, and PostgreSQL persistence retained.
+## What changed
+- Cleaner, denser command-center UI with improved typography, spacing, responsive cards, and stronger selected states.
+- Performance Deck adds verified 3rd-down, 4th-down, penalties, possession, yards/play, and red-zone fields when the connected feed supplies them.
+- Team comparison expanded beyond basic yardage while preserving exact stat aliases.
+- Pregame/live/final phase labeling so available context is not automatically presented as live game data.
+- Scoreboard discovery now uses the Eastern Time calendar date rather than the server's local/UTC date.
+- Short scoreboard cache reduces repeated ESPN hydration calls on busy game windows.
+- Additional HTTP security headers.
+- Manual collection through GET `/api/collect` is disabled; the automatic collector remains active.
+- Dynamic play, drive, and scoring text is escaped before rendering in the main live surfaces.
+- Existing PostgreSQL archive, player box score, scoring summary, replay, history, back navigation, and live refresh remain intact.
 
-## Data integrity
-If a value cannot be mapped to a verified connected field or clearly labeled derived calculation, GRIDIRON ATLAS displays `—`. No synthetic values are generated.
+## Data rule
+If a field cannot be mapped to a verified connected value, GRIDIRON ATLAS displays `—`. Derived displays must be clearly labeled and use only connected values.
 
 ## Render
-Build: `pip install -r requirements.txt`
-Start: `python server.py`
-Keep `DATABASE_URL` private and unchanged.
+Build command: `pip install -r requirements.txt`
+Start command: `python server.py`
+Keep `DATABASE_URL` private and in Render Environment only.

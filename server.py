@@ -85,6 +85,11 @@ class Store:
             p=r[0] if self.pg else r["payload"];out.append(json.loads(p) if isinstance(p,str) else p)
         return out
 STORE=Store()
+SCORE_CACHE={"key":None,"ts":0,"value":None}
+SCORE_CACHE_SECONDS=20
+
+def eastern_day():
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
 
 def _event_id_from_ref(item):
     if not isinstance(item,dict):return None
@@ -132,7 +137,11 @@ def scoreboard(date=None):
     Core's events endpoint returns reference objects rather than the site-scoreboard
     event shape. 3.1 incorrectly parsed those transports as interchangeable.
     """
-    day=date or time.strftime("%Y%m%d")
+    day=date or eastern_day()
+    cache_key=str(day)
+    now=time.time()
+    if SCORE_CACHE.get("key")==cache_key and SCORE_CACHE.get("value") is not None and now-SCORE_CACHE.get("ts",0)<SCORE_CACHE_SECONDS:
+        return SCORE_CACHE["value"]
     u=f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events?dates={day}&limit=32"
     try:
         raw=fetch(u,"ESPN_CORE_EVENTS")
@@ -149,7 +158,9 @@ def scoreboard(date=None):
         # A successful Core response with zero items is not a provider error.
         if errors and not games:LAST["error"]="Scoreboard hydration failed: "+errors[0]
         elif games:LAST["error"]=None
-        return {"games":games,"source":PROVIDER,"date":day,"event_count":len(ids)}
+        result={"games":games,"source":PROVIDER,"date":day,"event_count":len(ids),"cached":False}
+        SCORE_CACHE.update({"key":cache_key,"ts":now,"value":result})
+        return result
     except Exception:
         # Preserve archive usability if discovery is temporarily unavailable.
         archived=[]
@@ -214,7 +225,7 @@ def collect_once():
         st=(g.get("status") or "").lower()
         # Collect live/final games. Status text varies by provider, so include common
         # game-state words instead of depending only on Q1/Q2/etc.
-        if any(x in st for x in ["q1","q2","q3","q4","half","ot","final","end","in progress","halftime"]):
+        if any(x in st for x in ["q1","q2","q3","q4","1st","2nd","3rd","4th","half","ot","final","end","in progress","halftime"]):
             try:game(g["id"],True)
             except Exception as e:LAST["error"]=str(e)
     LAST["collector"]=int(time.time())
@@ -255,6 +266,12 @@ def legacy_live():
 
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options","nosniff")
+        self.send_header("Referrer-Policy","no-referrer")
+        self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+        self.send_header("X-Frame-Options","SAMEORIGIN")
+        super().end_headers()
     def sendj(self,o,status=200):
         b=json.dumps(o).encode();self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_GET(self):
@@ -266,8 +283,8 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"3.11","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/collect":collect_once();return self.sendj({"ok":True,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"5.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])
             for p in g.get("players",[]):

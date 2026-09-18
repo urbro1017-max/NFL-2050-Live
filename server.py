@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="12.0"
-BUILD_NAME="ATLAS ONE"
+VERSION="12.1"
+BUILD_NAME="ATLAS ONE · SYSTEM PASS"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -46,7 +46,7 @@ def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.0)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.1)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
@@ -1082,6 +1082,21 @@ def atlas_overview():
             "collector":{"last_run":LAST.get("collector"),**collector,"errors":LAST.get("collector_errors") or []},
             "last_final":last_final,"source":"ATLAS_POSTGRES_ARCHIVE+COLLECTOR_STATE","updated":int(time.time())}
 
+def archive_recent(limit=8):
+    out=[]
+    for meta in STORE.games()[:max(1,min(int(limit or 8),24))]:
+        g=STORE.game(str(meta.get("id"))) or {}
+        teams=g.get("teams") or []
+        out.append({
+            "id":g.get("id") or meta.get("id"),"status":g.get("status") or meta.get("status"),
+            "state":g.get("state"),"completed":bool(g.get("completed")),"date":g.get("date"),
+            "teams":[{"abbr":t.get("abbr"),"name":t.get("name"),"side":t.get("side"),"score":t.get("score"),"logo":t.get("logo")} for t in teams],
+            "players":len(g.get("players") or []),"plays":len(g.get("plays") or []),"drives":len(g.get("drives") or []),
+            "quality":game_quality(g) if 'game_quality' in globals() else None,
+            "updated":meta.get("updated")
+        })
+    return out
+
 def game_quality(g):
     if not g:return {"score":0,"label":"NO DATA","checks":{}}
     checks={
@@ -1130,6 +1145,10 @@ class H(SimpleHTTPRequestHandler):
             return self.sendj(game(gid))
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
+        if u.path=="/api/recent":
+            try: limit=int((q.get("limit") or [8])[0])
+            except Exception: limit=8
+            return self.sendj({"ok":True,"games":archive_recent(limit),"database":STORE.kind})
         if u.path=="/api/quality":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             return self.sendj({"id":gid,**game_quality(STORE.game(gid) or game(gid))})

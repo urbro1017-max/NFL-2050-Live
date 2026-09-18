@@ -1,6 +1,10 @@
-# GRIDIRON ATLAS 12.0 — ATLAS ONE
+# GRIDIRON ATLAS 12.1 — ATLAS ONE · SYSTEM PASS
 
-The largest consolidation release yet. 12.0 turns the Sunday Week Engine into the front door of a unified NFL analytics operating system.
+12.1 is the consolidation/cleanup pass on ATLAS ONE: a repaired My Atlas Today dashboard, direct universal search, breadcrumbs/deep-link polish, request deduplication, richer archive telemetry, player coverage clarity, loading states, and UI cleanup while preserving the 11.x Week Engine and Atlas-owned archive.
+
+Data integrity rule: unavailable provider fields remain unavailable; Atlas-derived values are labeled; tracking-grade metrics stay source-gated.
+
+The largest consolidation release yet. 12.1 turns the Sunday Week Engine into the front door of a unified NFL analytics operating system.
 
 ## Major changes
 - ATLAS ONE NFL Command Center with kickoff-window grouping, team logos, records, venue context, live/final/upcoming states, and one-click game drilldown.

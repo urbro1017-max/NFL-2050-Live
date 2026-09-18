@@ -1,8 +1,9 @@
-# GRIDIRON ATLAS 9.0 — OMNI
+# GRIDIRON ATLAS 9.1 — RELIABILITY
 
-Major depth-first overhaul built on 8.1. Keeps the consolidated navigation while adding Week Center, Season Center, Roster HQ, Matchup Lab, Data Quality Center, richer all-32 matrices, responsive layouts, and deeper contextual navigation. Existing Game Center, War Room, Stat Studio, Film Room, Game DNA, Situation Lab, League HQ, Players, Analytics, Compare, Archive, My Atlas and live polling remain.
+Stability overhaul of 9.0 OMNI. Keeps the consolidated information architecture while hardening routing, deep links, favorites, command search, network handling, density preferences, and API input validation.
+
+## Deploy
+Upload the contents of this package directly to the existing GitHub repository root. Keep the existing Render service and DATABASE_URL unchanged.
 
 ## Data integrity
-Provider values stay provider-supplied. Atlas calculations are labeled derived. Unsupported values remain `—`. Tracking-grade Next Gen Stats remain source-gated.
-
-Deploy the CONTENTS of this folder to the repository root. Keep the existing Render environment variables and PostgreSQL configuration.
+Provider values remain provider-supplied. Atlas-derived metrics are labeled. Unsupported metrics display —. Tracking-grade advanced metrics remain source-gated.

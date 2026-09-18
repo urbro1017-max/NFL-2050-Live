@@ -580,17 +580,24 @@ class H(SimpleHTTPRequestHandler):
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
         if u.path=="/api/games":return self.sendj(scoreboard((q.get("date") or [None])[0]))
-        if u.path=="/api/game":return self.sendj(game((q.get("id") or [DEFAULT_GAME_ID])[0]))
+        if u.path=="/api/game":
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
+            if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
+            return self.sendj(game(gid))
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path in ["/api/history","/api/snapshots"]:
-            gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
+            if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
+            return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"9.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"9.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
-            gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])
+            gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
+            if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
+            g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])
             for p in g.get("players",[]):
                 for k,v in (p.get("stats") or {}).items():w.writerow([p.get("team"),p.get("name"),p.get("position"),p.get("category"),k,v])
             b=buf.getvalue().encode();self.send_response(200);self.send_header("Content-Type","text/csv");self.send_header("Content-Disposition",f'attachment; filename="gridiron-{gid}.csv"');self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b);return

@@ -1,4 +1,5 @@
 import json,os,time,sqlite3,csv,io,threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
@@ -11,7 +12,10 @@ DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
-PROVIDER="ESPN_CORE_DISCOVERY+CDN_GAME"
+PROVIDER="ESPN_MULTI_SOURCE_FUSION"
+LIVE_CACHE={}
+LIVE_CACHE_LOCK=threading.Lock()
+LIVE_CACHE_SECONDS=2.0
 
 def _load_verified_players():
     try:
@@ -186,19 +190,82 @@ def scoreboard(date=None):
         LAST["fallback"]="archive"
         return {"games":archived,"source":"ARCHIVE_FALLBACK","date":day,"event_count":len(archived)}
 
-def game(gid,save=True):
-    # CDN game package first. Normalize ESPN's live package into one stable schema.
-    try:
-        raw=fetch(f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_CDN_GAME")
-        d=raw.get("gamepackageJSON",raw)
-        LAST["fallback"]=None
-    except Exception:
-        try:
-            d=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}","ESPN_SITE_SUMMARY_FALLBACK")
-            LAST["fallback"]="site summary"
-        except Exception:
-            return STORE.game(gid) or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
+def _unwrap_espn(payload):
+    if not isinstance(payload,dict): return {}
+    return payload.get("gamepackageJSON") or payload.get("content") or payload
 
+def _clock_seconds(v):
+    try:
+        m,s=str(v).strip().split(":",1); return int(m)*60+int(s)
+    except Exception:return 900
+
+def _provider_progress(d):
+    """Higher tuple = later game state. Uses football state before HTTP arrival time."""
+    comp=((d.get("header") or {}).get("competitions") or [{}])[0]
+    st=comp.get("status") or {}; period=int(st.get("period") or 0)
+    clock=st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "15:00"
+    elapsed=max(0,900-_clock_seconds(clock))
+    newest=0; count=0
+    rows=[]
+    rows.extend(d.get("plays") or [])
+    db=d.get("drives") or {}
+    if isinstance(db,dict):
+        rows.extend(db.get("previous") or [])
+        if isinstance(db.get("current"),dict): rows.append(db["current"])
+    for row in rows:
+        plays=row.get("plays") if isinstance(row,dict) else None
+        candidates=plays if isinstance(plays,list) else [row]
+        for play in candidates:
+            if not isinstance(play,dict):continue
+            if play.get("id"):count+=1
+            for key in ("modified","wallclock"):
+                val=play.get(key)
+                if not val:continue
+                try:newest=max(newest,int(datetime.fromisoformat(str(val).replace("Z","+00:00")).timestamp()))
+                except Exception:pass
+    return (period,elapsed,newest,count)
+
+def _fetch_live_candidates(gid):
+    urls={
+      "CDN_GAME":f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}",
+      "CDN_PLAYBYPLAY":f"https://cdn.espn.com/core/nfl/playbyplay?xhr=1&gameId={gid}",
+      "SITE_SUMMARY":f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}",
+    }
+    found=[]
+    def one(item):
+        name,url=item
+        raw=fetch(url,"ESPN_"+name)
+        d=_unwrap_espn(raw)
+        return name,d,_provider_progress(d)
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futs=[ex.submit(one,x) for x in urls.items()]
+        for f in as_completed(futs):
+            try:found.append(f.result())
+            except Exception:pass
+    return found
+
+def game(gid,save=True):
+    gid=str(gid)
+    with LIVE_CACHE_LOCK:
+        cached=LIVE_CACHE.get(gid)
+        if cached and time.time()-cached["ts"]<LIVE_CACHE_SECONDS:
+            return cached["value"]
+    candidates=_fetch_live_candidates(gid)
+    if not candidates:
+        archived=STORE.game(gid)
+        return archived or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
+    # Choose by actual game progress (period + game clock), not by which HTTP request returned last.
+    candidates.sort(key=lambda x:x[2],reverse=True)
+    chosen_name,d,chosen_progress=candidates[0]
+    provider_meta=[{"name":n,"progress":list(pr)} for n,_,pr in candidates]
+    # Some specialized responses omit sections. Fill only missing sections from the
+    # freshest candidate that contains them; never overwrite a newer live section.
+    for key in ("boxscore","drives","plays","scoringPlays","header"):
+        if d.get(key):continue
+        for _,other,_ in candidates:
+            if other.get(key):
+                d[key]=other[key];break
+    LAST["fallback"]=None
     comp=((d.get("header") or {}).get("competitions") or [{}])[0]
     teams=[]; lines={}; team_id_to_abbr={}
     for c in comp.get("competitors") or []:
@@ -207,7 +274,7 @@ def game(gid,save=True):
         lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
         teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
     st=comp.get("status") or {}; typ=st.get("type") or {}
-    out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"scoring_plays":[],"linescores":lines,"source":PROVIDER,"fetched_at":int(time.time())}
+    out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"scoring_plays":[],"linescores":lines,"source":PROVIDER+":"+chosen_name,"fetched_at":int(time.time())}
 
     for t in ((d.get("boxscore") or {}).get("teams") or []):
         ab=((t.get("team") or {}).get("abbreviation") or "").upper()
@@ -287,7 +354,22 @@ def game(gid,save=True):
         "latestPlay":latest.get("text") or "—"
     }
     out["roster_players"]=baseline_players_for([t.get("abbr") for t in teams])
+    # Feed freshness is based on the newest provider play timestamp, not request time.
+    newest_ts=0
+    for rawp in play_map.values():
+        for key in ("modified","wallclock"):
+            val=rawp.get(key)
+            if not val: continue
+            try:
+                ts=int(datetime.fromisoformat(str(val).replace("Z","+00:00")).timestamp())
+                newest_ts=max(newest_ts,ts)
+            except Exception: pass
+    out["feed_timestamp"]=newest_ts or None
+    out["feed_age_seconds"]=max(0,int(time.time())-newest_ts) if newest_ts else None
+    out["provider_candidates"]=provider_meta
     if save:STORE.save(out)
+    with LIVE_CACHE_LOCK:
+        LIVE_CACHE[str(gid)]={"ts":time.time(),"value":out}
     return out
 
 def collect_once():
@@ -362,7 +444,7 @@ class H(SimpleHTTPRequestHandler):
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];return self.sendj({"id":gid,"snapshots":STORE.snaps(gid)})
         if u.path=="/api/players":return self.sendj({"players":player_index()})
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.3","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"6.4","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0];g=game(gid);buf=io.StringIO();w=csv.writer(buf);w.writerow(["team","player","position","category","stat","value"])

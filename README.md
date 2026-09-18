@@ -1,15 +1,10 @@
-# GRIDIRON ATLAS 6.3 — Live Schema Repair
+# GRIDIRON ATLAS 6.4 — Freshness Fusion
 
-Fixes verified against the user-captured live ESPN payload for game 401872932.
+Live accuracy repair. The backend now queries multiple ESPN live surfaces concurrently and chooses the response representing the furthest actual game progress, rather than assuming one CDN endpoint is freshest.
 
-- Flattens live plays embedded inside ESPN drive objects.
-- Deduplicates and chronologically orders plays.
-- Normalizes drive time and play counts.
-- Builds possession/down/distance/spot from the latest play end-state.
-- Uses exact ESPN team-stat labels.
-- Uses category-specific passing/rushing/receiving leaders.
-- Uses official statYardage for derived explosive-play calculations.
-- Keeps 5-second no-store browser polling and PostgreSQL collector persistence.
-- Version UI/API updated to 6.3.
-
-Render settings stay unchanged: build `pip install -r requirements.txt`, start `python server.py`, preserve DATABASE_URL.
+- CDN full game + CDN play-by-play + ESPN site summary queried concurrently
+- Selection uses period/game-clock progress plus play timestamps
+- Missing sections are filled without overwriting newer live sections
+- 2-second backend coalescing cache prevents duplicate browser/collector bursts
+- UI distinguishes request freshness from feed freshness
+- Never fabricates the NFL game clock

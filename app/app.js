@@ -365,3 +365,52 @@ filterPlayers=function(){_filterPlayers106();let m=document.querySelector('.play
 // FINAL games are archived states, not stale live feeds.
 const _sync106=renderSyncStatus;
 renderSyncStatus=function(){_sync106();const el=$('#healthText'),g=state.game;if(el&&isFinal105(g)){const syncAge=state.lastSync?Math.max(0,Math.round((Date.now()-state.lastSync)/1000)):0;el.textContent=`FINAL · ARCHIVED GAME · checked ${syncAge}s ago`;}}
+
+
+/* ===== 10.7 ATLAS PLAYER ARCHIVE ===== */
+const ATLAS107={version:'10.7'};
+function finalish107(s){s=String(s||'').toLowerCase();return s.includes('final')||s.includes('complete')||s.includes('closed')}
+function uniqueCapturedGames107(rows){
+  const m=new Map();
+  (rows||[]).forEach(r=>{
+    const id=String(r.game_id||r.id||''); if(!id)return;
+    const g=m.get(id)||{game_id:id,status:r.status,team:r.team,categories:{},stats:{}};
+    if(r.categories&&typeof r.categories==='object') Object.entries(r.categories).forEach(([c,st])=>g.categories[c]={...(g.categories[c]||{}),...(st||{})});
+    if(r.category) g.categories[r.category]={...(g.categories[r.category]||{}),...(r.stats||{})};
+    Object.entries(r.stats||{}).forEach(([k,v])=>g.stats[k]=v);
+    m.set(id,g);
+  }); return [...m.values()];
+}
+function numeric107(v){const n=Number(String(v??'').replaceAll(',','').replace('%',''));return Number.isFinite(n)?n:null}
+function additive107(label){const u=String(label||'').toUpperCase();return !['AVG','PCT','%','RATE','RTG','LONG','Y/A','Y/C','YDS/ATT','YDS/CAR','YDS/REC'].some(x=>u.includes(x))}
+function aggregateCaptured107(games){
+  const b={};
+  games.filter(g=>finalish107(g.status)).forEach(g=>Object.entries(g.categories||{}).forEach(([cat,stats])=>Object.entries(stats||{}).forEach(([label,val])=>{
+    const n=numeric107(val); if(n==null||!additive107(label))return; const k=cat+'|||'+label;b[k]=(b[k]||0)+n;
+  })));
+  return Object.entries(b).map(([k,v])=>{const [category,label]=k.split('|||');return {category,label,value:Number.isInteger(v)?v:+v.toFixed(2)}});
+}
+function capturedGamesMarkup107(games){
+  return games.slice().reverse().slice(0,8).map(g=>`<div class="capturedGame107"><div class="capturedGameTop107"><b>${esc(g.status||'GAME')}</b><span>GAME ${esc(g.game_id)}</span></div>${Object.entries(g.categories||{}).map(([cat,st])=>`<div class="capturedCat107"><small>${esc(cat)}</small><div>${Object.entries(st||{}).slice(0,8).map(([k,v])=>`<span><em>${esc(k)}</em><b>${esc(v)}</b></span>`).join('')}</div></div>`).join('')}</div>`).join('');
+}
+const _showProfile107=showProfile;
+showProfile=async function(p){
+  await _showProfile107(p); if(!p)return;
+  const box=$('#playerProfile'); if(!box)return;
+  // The directory already contains verified box-score rows. Use them even when an
+  // external season-total endpoint is unavailable.
+  const games=uniqueCapturedGames107(p.games||[]), finals=games.filter(g=>finalish107(g.status)), aggregate=aggregateCaptured107(finals);
+  let season=box.querySelector('.primeSeason');
+  if(season && !season.querySelector('.profileStatGroup') && aggregate.length){
+    const head=season.querySelector('.cardHead'),body=season.querySelector('.cardBody');
+    if(head)head.innerHTML=`<b>Atlas Verified Sample</b><span class="badge sourceCaptured106">${finals.length} UNIQUE FINAL GAME${finals.length===1?'':'S'}</span>`;
+    if(body)body.innerHTML=`<div class="capturedNotice106"><b>Verified production from games stored by Atlas.</b><span>This is a captured sample, not a complete 2026 season total. Counting stats are summed; rates and averages are not added together.</span></div>${statMarkup106(aggregate)}`;
+  }
+  // Replace the legacy category-count cards with true one-card-per-game history.
+  const cards=[...box.querySelectorAll('.card')];
+  const captured=cards.find(c=>c.querySelector('.cardHead b')?.textContent.trim().toLowerCase()==='atlas captured games');
+  if(captured){
+    const h=captured.querySelector('.cardHead');if(h)h.innerHTML=`<b>Atlas Captured Games</b><span>${games.length} UNIQUE GAME${games.length===1?'':'S'}</span>`;
+    const body=captured.querySelector('.cardBody');if(body){body.className='cardBody capturedGamesGrid107';body.innerHTML=capturedGamesMarkup107(games)}
+  }
+};

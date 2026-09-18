@@ -607,9 +607,25 @@ def player_profile(aid):
     with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
     return value
 
+def _merge_captured_game_rows(rows):
+    """Collapse ESPN box-score category rows into one logical row per game/player.
+    A player can appear once for passing, rushing, receiving, fumbles, etc.; those
+    are categories from ONE game, not separate games.
+    """
+    grouped={}
+    for row in rows or []:
+        gid=str(row.get("game_id") or "")
+        if not gid: continue
+        g=grouped.setdefault(gid,{"game_id":gid,"status":row.get("status"),"team":row.get("team"),"categories":{},"stats":{}})
+        cat=row.get("category") or "stats"
+        stats=row.get("stats") or {}
+        g["categories"].setdefault(cat,{}).update(stats)
+        for k,v in stats.items(): g["stats"][f"{cat}:{k}"]=v
+    return list(grouped.values())
+
 def player_index():
-    # 10.1: all active team rosters are the primary player directory. Archive game
-    # rows are merged on top so profiles retain captured Atlas game history.
+    # 10.7: all active team rosters remain the directory, but archived box-score
+    # category rows are collapsed into unique games before reaching the browser.
     out={}
     errors=[]
     try:
@@ -617,9 +633,8 @@ def player_index():
         for p in roster_rows:
             key=str(p.get("id") or (p.get("team"),p.get("name")))
             out[key]={**p,"games":[]}
-    except Exception as e:
+    except Exception:
         errors=["league_rosters"]
-    # Embedded verified rows remain a fallback only.
     if not out:
         for p in VERIFIED_PLAYERS:
             n=p.get("name")
@@ -630,13 +645,12 @@ def player_index():
             n=p.get("name");aid=str(p.get("id") or "")
             if not n:continue
             row=out.get(aid) if aid else None
-            if row is None:
-                row=next((v for v in out.values() if v.get("name")==n and v.get("team")==p.get("team")),None)
+            if row is None: row=next((v for v in out.values() if v.get("name")==n and v.get("team")==p.get("team")),None)
             if row is None:
                 key=aid or str((p.get("team"),n));row={"id":p.get("id"),"name":n,"team":p.get("team"),"position":p.get("position"),"source":"ARCHIVED_FEED","games":[],"starter":False};out[key]=row
             row.setdefault("games",[]).append({"game_id":g["id"],"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats")})
-    rows=sorted(out.values(),key=lambda x:(x.get("team") or "",0 if x.get("starter") else 1,x.get("position") or "",x.get("name") or ""))
-    return rows
+    for row in out.values(): row["games"]=_merge_captured_game_rows(row.get("games"))
+    return sorted(out.values(),key=lambda x:(x.get("team") or "",0 if x.get("starter") else 1,x.get("position") or "",x.get("name") or ""))
 
 def team_index():
     out={}
@@ -987,7 +1001,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.6","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.7","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

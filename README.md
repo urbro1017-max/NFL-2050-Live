@@ -1,5 +1,3 @@
-# GRIDIRON ATLAS 10.6 — PLAYER DATA ENGINE
+# GRIDIRON ATLAS 10.7 — ATLAS PLAYER ARCHIVE
 
-Unified NFL analytics application. 10.6 focuses on player-season stat retrieval reliability, final-game presentation, consistent drill-down behavior, and refinement of the 10.4 Blue/Unified interface.
-
-Data integrity rule: provider-supplied values are preserved; derived values are labeled; unavailable fields display —.
+10.7 fixes player game accounting and makes Atlas-captured box scores a first-class verified fallback. ESPN box-score category rows are collapsed into unique games, captured counting stats are aggregated without summing rates/averages, and player profiles show one card per real game. Full-season provider totals remain source-gated when unavailable.

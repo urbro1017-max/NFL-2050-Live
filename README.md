@@ -1,4 +1,4 @@
-# ATLAS 17.3 — CLEAN CORE
+# ATLAS 17.4 — VISUAL CORE
 
 Complete Render-ready build.
 

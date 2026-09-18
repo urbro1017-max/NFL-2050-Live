@@ -1,3 +1,7 @@
+# GRIDIRON ATLAS 19.0 — UNIFIED FOOTBALL OS
+
+ATLAS 19.0 consolidates the 18.x roadmap into one release: Team Command 2.0 with league-relative context, richer Player DNA profiles, a persistent unified game workspace, personalized My Atlas briefing, connected drill-down navigation, responsive polish, and synchronized build identity. Existing verified-feed/data-integrity rules remain in force; unavailable metrics remain unavailable rather than fabricated.
+
 ATLAS 18.1 — INTERACTIVE FOOTBALL
 
 ATLAS 17.6 — GAME STORY CORE

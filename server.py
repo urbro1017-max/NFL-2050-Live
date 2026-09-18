@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="12.3"
-BUILD_NAME="ATLAS ARCHIVE INTELLIGENCE"
+VERSION="13.0"
+BUILD_NAME="ATLAS INTELLIGENCE ENGINE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -52,7 +52,7 @@ def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.3)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/13.0)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",

@@ -1,4 +1,4 @@
-# GRIDIRON ATLAS 12.3 — ARCHIVE INTELLIGENCE
+# GRIDIRON ATLAS 13.0 — INTELLIGENCE ENGINE
 
 12.3 is a read-only analytics and archive-experience release built on top of the proven 12.2 Archive Engine. It deliberately does not alter the collector/backfill lifecycle.
 
@@ -21,3 +21,16 @@
 
 ## Deployment
 Upload the contents of this package to the existing repository root. Keep the existing Render service, build/start commands, and DATABASE_URL unchanged.
+
+
+## 13.0 additions
+- Dedicated Game Intelligence workspace with live narrative from captured game state.
+- Clearly labeled Atlas score/time win-probability model and snapshot timeline.
+- Position-aware 0–99 Atlas Impact model and live MVP race.
+- Drive Analyzer with plays, yards, time, result, and yards/play when available.
+- Feed-age status surfaced in the intelligence workspace.
+- Direct player drilldowns from the MVP race.
+- Professional visual pass: quieter surfaces, tighter borders, glass header, stronger hierarchy, and responsive intelligence cards.
+- Existing player profiles, team universe, archive intelligence, compare lab, command search, historical archive/backfill, and auto-collection remain intact.
+
+All new computed metrics are explicitly marked as Atlas-derived. Missing provider data is never fabricated.

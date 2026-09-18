@@ -1,10 +1,11 @@
-# GRIDIRON ATLAS 6.5 — Team Identity
+# GRIDIRON ATLAS 6.6 — Game Glance
 
-Live accuracy repair. The backend now queries multiple ESPN live surfaces concurrently and chooses the response representing the furthest actual game progress, rather than assuming one CDN endpoint is freshest.
+Readability-first live NFL dashboard. Keeps the 6.4 freshness-fusion live engine, while rebuilding Game Overview, Team Stats, and Analytics around a simple question: **what is happening right now?**
 
-- CDN full game + CDN play-by-play + ESPN site summary queried concurrently
-- Selection uses period/game-clock progress plus play timestamps
-- Missing sections are filled without overwriting newer live sections
-- 2-second backend coalescing cache prevents duplicate browser/collector bursts
-- UI distinguishes request freshness from feed freshness
-- Never fabricates the NFL game clock
+- Automatic matchup colors
+- Large score/current-situation treatment
+- Side-by-side visual stat comparisons
+- Essential stats only
+- Cleaner live play/current drive cards
+- Simplified analytics: yards/play, points/drive, total yards, first downs, turnovers, third down
+- No fabricated statistics

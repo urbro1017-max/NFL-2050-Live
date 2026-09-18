@@ -115,6 +115,8 @@ class Store:
 STORE=Store()
 SCORE_CACHE={"key":None,"ts":0,"value":None}
 SCORE_CACHE_SECONDS=20
+WEEK_CACHE={"key":None,"ts":0,"value":None}
+WEEK_CACHE_SECONDS=60
 
 def eastern_day():
     return datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
@@ -169,11 +171,14 @@ def scoreboard(date=None):
     event shape. 3.1 incorrectly parsed those transports as interchangeable.
     """
     day=date or eastern_day()
-    cache_key=str(day)
+    # ESPN Core date filters are most reliable as YYYYMMDD. Accept browser YYYY-MM-DD too.
+    day=str(day)
+    provider_day=day.replace("-","")
+    cache_key=provider_day
     now=time.time()
     if SCORE_CACHE.get("key")==cache_key and SCORE_CACHE.get("value") is not None and now-SCORE_CACHE.get("ts",0)<SCORE_CACHE_SECONDS:
         return SCORE_CACHE["value"]
-    u=f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events?dates={day}&limit=32"
+    u=f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/events?dates={provider_day}&limit=32"
     try:
         raw=fetch(u,"ESPN_CORE_EVENTS")
         ids=[]
@@ -199,6 +204,49 @@ def scoreboard(date=None):
             archived.append({"id":x["id"],"status":x.get("status","Archived"),"teams":x.get("teams",[]),"date":None})
         LAST["fallback"]="archive"
         return {"games":archived,"source":"ARCHIVE_FALLBACK","date":day,"event_count":len(archived)}
+
+
+def _scoreboard_event_row(ev):
+    comp=((ev.get("competitions") or [{}])[0])
+    teams=[]
+    for c in comp.get("competitors") or []:
+        t=c.get("team") or {}
+        teams.append({"side":c.get("homeAway"),"abbr":(t.get("abbreviation") or "").upper(),"name":t.get("displayName") or t.get("shortDisplayName"),"logo":_team_logo(t),"score":c.get("score","0")})
+    st=comp.get("status") or {}; typ=st.get("type") or {}
+    return {"id":str(ev.get("id") or comp.get("id") or ""),"date":ev.get("date") or comp.get("date"),"name":ev.get("name"),"shortName":ev.get("shortName"),"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or "—","teams":teams,"venue":((comp.get("venue") or {}).get("fullName")),"season":(ev.get("season") or {}).get("year"),"season_type":(ev.get("season") or {}).get("type"),"week":(ev.get("week") or {}).get("number")}
+
+def week_schedule(season=2026,week=None,seasontype=2):
+    season=int(season or 2026); seasontype=int(seasontype or 2)
+    key=f"{season}:{seasontype}:{week or 'current'}"; now=time.time()
+    if WEEK_CACHE.get("key")==key and WEEK_CACHE.get("value") is not None and now-WEEK_CACHE.get("ts",0)<WEEK_CACHE_SECONDS:return WEEK_CACHE["value"]
+    try:
+        if week is None:
+            raw=fetch("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard","ESPN_SITE_CURRENT_WEEK")
+            meta_week=((raw.get("week") or {}).get("number"))
+            meta_season=((raw.get("season") or {}).get("year")) or season
+            meta_type=((raw.get("season") or {}).get("type")) or seasontype
+            if meta_week: week=int(meta_week); season=int(meta_season); seasontype=int(meta_type)
+        url=f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={season}&seasontype={seasontype}&week={int(week)}&limit=32"
+        raw=fetch(url,"ESPN_SITE_WEEK")
+        games=[_scoreboard_event_row(x) for x in raw.get("events") or []]
+        games=[g for g in games if g.get("id")]
+        result={"ok":True,"season":season,"season_type":seasontype,"week":int(week),"games":games,"counts":{"live":sum(g["state"]=="in" for g in games),"final":sum(g["completed"] or g["state"]=="post" for g in games),"upcoming":sum(g["state"]=="pre" for g in games)},"source":"ESPN_SITE_WEEK"}
+        WEEK_CACHE.update({"key":key,"ts":now,"value":result});return result
+    except Exception as e:
+        return {"ok":False,"season":season,"season_type":seasontype,"week":week,"games":[],"counts":{"live":0,"final":0,"upcoming":0},"source":"UNAVAILABLE","error":str(e)}
+
+def _kickoff_epoch(v):
+    try:return datetime.fromisoformat(str(v).replace("Z","+00:00")).timestamp()
+    except Exception:return None
+
+def should_collect_week_game(row):
+    state=str(row.get("state") or "pre").lower()
+    if state=="in":return True
+    if row.get("completed") or state=="post":
+        old=STORE.game(str(row.get("id")))
+        return not old or not old.get("completed")
+    ko=_kickoff_epoch(row.get("date"))
+    return bool(ko and -3600 <= ko-time.time() <= 7200)
 
 def _unwrap_espn(payload):
     if not isinstance(payload,dict): return {}
@@ -383,13 +431,16 @@ def game(gid,save=True):
     return out
 
 def collect_once():
-    sb=scoreboard()
-    for g in sb.get("games",[]):
-        # Hydrate every discovered game. This avoids a provider-state parsing mismatch
-        # preventing live collection when ESPN changes status wording/shape.
-        try: game(g["id"], True)
+    # 11.0 Week Engine: discover the whole current NFL week, then hydrate only games
+    # that are live, near kickoff, or need one final archival capture.
+    wk=week_schedule()
+    rows=wk.get("games",[]) if wk.get("ok") else scoreboard().get("games",[])
+    collected=0
+    for g in rows:
+        if not should_collect_week_game(g): continue
+        try: game(g["id"], True); collected+=1
         except Exception as e: LAST["error"]=str(e)
-    LAST["collector"]=int(time.time())
+    LAST["collector"]=int(time.time()); LAST["week_collected"]=collected; LAST["week_discovered"]=len(rows)
 def collector():
     while True:
         try:collect_once()
@@ -985,6 +1036,10 @@ class H(SimpleHTTPRequestHandler):
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
         if u.path=="/api/games":return self.sendj(scoreboard((q.get("date") or [None])[0]))
+        if u.path=="/api/week":
+            season=(q.get("season") or [2026])[0]; week=(q.get("week") or [None])[0]; st=(q.get("type") or [2])[0]
+            try:return self.sendj(week_schedule(season, int(week) if week not in (None,"") else None, st))
+            except Exception as e:return self.sendj({"ok":False,"games":[],"error":str(e)},502)
         if u.path=="/api/game":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
@@ -1014,7 +1069,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.8","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"11.0","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

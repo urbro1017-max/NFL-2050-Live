@@ -1,3 +1,9 @@
+ATLAS 18.0 — CONNECTED INTELLIGENCE
+
+ATLAS 17.6 — GAME STORY CORE
+
+Visual game-story and league-density upgrade.
+
 ATLAS 17.5 — SPECTRUM CORE
 
 Visual analytics release: team signal rings, league differential map, player composition donut, 32-team GM personnel heatmap, expanded NFL logo identity, and clarified Atlas Performance Index baseline.

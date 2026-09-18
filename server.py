@@ -498,26 +498,81 @@ def league_rosters():
     return rows,errors
 
 def _flatten_stats(raw):
+    """Normalize ESPN web/core statistic payloads without assuming one schema."""
     out=[]
+    def add(cat,label,val,abbr=None,rank=None):
+        if label in (None,"") or val in (None,""): return
+        out.append({"category":cat or "Season","label":str(label),"value":val,"abbr":abbr,"rank":rank})
     def walk(x,cat=None):
         if isinstance(x,dict):
-            name=x.get("displayName") or x.get("name") or cat
-            if isinstance(x.get("stats"),list):
-                for st in x["stats"]:
-                    if not isinstance(st,dict):continue
-                    label=st.get("displayName") or st.get("name") or st.get("abbreviation")
-                    val=st.get("displayValue",st.get("value"))
-                    if label is not None and val is not None:out.append({"category":name,"label":label,"value":val})
+            here=x.get("displayName") or x.get("name") or x.get("abbreviation") or cat
+            stats=x.get("stats")
+            # Most common ESPN web schema: category.stats[] objects.
+            if isinstance(stats,list):
+                for st in stats:
+                    if isinstance(st,dict):
+                        label=st.get("displayName") or st.get("name") or st.get("abbreviation") or st.get("shortDisplayName")
+                        val=st.get("displayValue")
+                        if val is None: val=st.get("value")
+                        add(here,label,val,st.get("abbreviation"),st.get("rank"))
+            # Some core responses pair labels/names with a values array.
+            names=x.get("names") or x.get("labels")
+            vals=x.get("values")
+            if isinstance(names,list) and isinstance(vals,list):
+                for i,val in enumerate(vals):
+                    label=names[i] if i<len(names) else f"Stat {i+1}"
+                    add(here,label,val)
             for k,v in x.items():
-                if k not in {"stats"}:walk(v,name if k in {"categories","splits"} else cat)
+                if k not in {"stats","values","names","labels"}: walk(v,here if k in {"categories","splits","statistics"} else cat)
         elif isinstance(x,list):
-            for v in x:walk(v,cat)
+            for v in x: walk(v,cat)
     walk(raw)
     seen=set();clean=[]
     for x in out:
-        k=(str(x.get("category")),str(x.get("label")),str(x.get("value")))
-        if k not in seen:seen.add(k);clean.append(x)
-    return clean[:80]
+        k=(str(x.get("category")),str(x.get("label")))
+        if k not in seen:
+            seen.add(k);clean.append(x)
+    return clean[:160]
+
+def _season_stats(aid):
+    """Try multiple verified public ESPN stat surfaces; never turn missing into zero."""
+    attempts=[
+      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_WEB_ATHLETE_STATS_2026"),
+      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats","ESPN_WEB_ATHLETE_STATS"),
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/athletes/{aid}/statistics/0","ESPN_CORE_ATHLETE_STATS_2026"),
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{aid}/statistics","ESPN_CORE_SEASON_ATHLETE_STATS"),
+    ]
+    errors=[]
+    for url,src in attempts:
+        try:
+            raw=fetch(url,src); rows=_flatten_stats(raw)
+            if rows:return rows,src,errors
+        except Exception as e: errors.append(src)
+    return [],None,errors
+
+def _game_log(aid):
+    attempts=[
+      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/gamelog?season=2026","ESPN_WEB_GAMELOG_2026"),
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{aid}/eventlog","ESPN_CORE_EVENTLOG_2026"),
+    ]
+    for url,src in attempts:
+        try:
+            raw=fetch(url,src)
+            # Keep a compact provider-grounded game-log representation. Frontend can show
+            # rows when ESPN supplies event labels plus stat values.
+            events=[]
+            evmap=raw.get("events") if isinstance(raw,dict) else None
+            if isinstance(evmap,dict):
+                for eid,e in list(evmap.items())[:24]:
+                    if isinstance(e,dict):events.append({"id":str(eid),"label":e.get("name") or e.get("shortName") or e.get("atVs") or str(eid),"date":e.get("gameDate") or e.get("date")})
+            elif isinstance(evmap,list):
+                for e in evmap[:24]:
+                    if isinstance(e,dict):events.append({"id":str(e.get("id") or ""),"label":e.get("name") or e.get("shortName") or "Game","date":e.get("date")})
+            # Preserve normalized stats if the gamelog exposes them.
+            rows=_flatten_stats(raw)
+            if events or rows:return {"events":events,"stats":rows[:80],"source":src}
+        except Exception: pass
+    return {"events":[],"stats":[],"source":None}
 
 def player_profile(aid):
     aid=str(aid or "")
@@ -528,24 +583,26 @@ def player_profile(aid):
         if c and now-c["ts"]<PROFILE_CACHE_SECONDS:return c["value"]
     raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{aid}","ESPN_ATHLETE_PROFILE")
     a=raw.get("athlete") if isinstance(raw.get("athlete"),dict) else raw
+    # Profile fallback: common/v3 often carries richer bio fields.
+    if not isinstance(a,dict) or not (a.get("fullName") or a.get("displayName")):
+        try:
+            wr=fetch(f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}","ESPN_WEB_ATHLETE_PROFILE")
+            a=wr.get("athlete") if isinstance(wr.get("athlete"),dict) else wr
+        except Exception: a=a if isinstance(a,dict) else {}
     team=(a.get("team") or {}) if isinstance(a,dict) else {}
     pos=(a.get("position") or {}) if isinstance(a,dict) else {}
     exp=(a.get("experience") or {}) if isinstance(a,dict) else {}
     college=(a.get("college") or {}) if isinstance(a,dict) else {}
     hs=(a.get("headshot") or {}) if isinstance(a,dict) else {}
-    stats=[]
-    try:
-        sr=fetch(f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_ATHLETE_STATS")
-        stats=_flatten_stats(sr)
-    except Exception:pass
+    stats,stats_source,stat_errors=_season_stats(aid)
+    gamelog=_game_log(aid)
     team_ab=team.get("abbreviation")
     depth_row={}
     if team_ab in TEAM_IDS:
         try:
-            rd=team_roster(team_ab)
-            depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
+            rd=team_roster(team_ab);depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
         except Exception:pass
-    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"source":"ESPN_ATHLETE_PROFILE+STATS+DEPTHCHART"},"updated":int(now)}
+    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_attempt_errors":stat_errors,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
     with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
     return value
 
@@ -778,7 +835,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.1","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.2","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

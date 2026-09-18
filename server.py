@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="12.1"
-BUILD_NAME="ATLAS ONE · SYSTEM PASS"
+VERSION="12.2"
+BUILD_NAME="ATLAS ARCHIVE ENGINE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -40,13 +40,19 @@ VERIFIED_PLAYERS=_load_verified_players()
 def baseline_players_for(teams):
     wanted={str(x).upper() for x in teams if x}
     return [{"name":p.get("name"),"team":p.get("team"),"position":p.get("pos"),"unit":p.get("unit"),"baseline":p.get("past"),"source":"EMBEDDED_VERIFIED_BASELINE"} for p in VERIFIED_PLAYERS if str(p.get("team","")).upper() in wanted]
-LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None}
+LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None,"backfill":None,"backfill_stats":{},"backfill_errors":[]}
+BACKFILL_LOCK=threading.Lock()
+BACKFILL_LAST_SCAN=0
+BACKFILL_SCAN_SECONDS=max(120,int(os.environ.get("BACKFILL_SCAN_SECONDS","300")))
+BACKFILL_BATCH=max(1,min(4,int(os.environ.get("BACKFILL_BATCH","2"))))
+ARCHIVE_COVERAGE_CACHE={"ts":0,"value":None}
+ARCHIVE_COVERAGE_CACHE_SECONDS=120
 
 def fetch(u,label="ESPN"):
     # ESPN's public CDN endpoints are the primary transport. A browser-like
     # header set avoids content-negotiation surprises while keeping credentials out.
     req=Request(u,headers={
-        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.1)",
+        "User-Agent":"Mozilla/5.0 (compatible; GridironAtlas/12.2)",
         "Accept":"application/json,text/plain,*/*",
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
@@ -481,7 +487,11 @@ def collect_once():
 def collector():
     while True:
         stats=None
-        try:stats=collect_once()
+        try:
+            stats=collect_once()
+            # Historical recovery is automatic and throttled. This is what lets Atlas
+            # repair Week 1 / missed finals without the user opening each game.
+            backfill_once(False)
         except Exception as e:
             LAST["collector_errors"]=[f"collector: {type(e).__name__}"]
         # Slow down when nothing is live; wake faster during games.
@@ -1077,15 +1087,24 @@ def atlas_overview():
             last_final={"id":meta.get("id"),"updated":meta.get("updated"),"status":meta.get("status"),"teams":meta.get("teams") or []}
     unique_players=len(player_ids)+len(player_names)
     collector=LAST.get("collector_stats") or {}
+    try: ac=archive_coverage()
+    except Exception: ac={"expected_finals":len(finals),"archived":len(finals),"missing":0,"partial":0,"weeks":[]}
     return {"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,
-            "coverage":{"stored_games":len(rows),"final_games":len(finals),"live_games":len(live),"teams_seen":len(teams),"unique_final_players":unique_players},
+            "coverage":{"stored_games":len(rows),"final_games":len(finals),"live_games":len(live),"teams_seen":len(teams),"unique_final_players":unique_players,"unique_final_player_entities":unique_players,"player_coverage_definition":"unique player identities appearing in Atlas final-game box-score rows"},
+            "archive_coverage":ac,
             "collector":{"last_run":LAST.get("collector"),**collector,"errors":LAST.get("collector_errors") or []},
+            "backfill":{"last_run":LAST.get("backfill"),**(LAST.get("backfill_stats") or {}),"errors":LAST.get("backfill_errors") or []},
             "last_final":last_final,"source":"ATLAS_POSTGRES_ARCHIVE+COLLECTOR_STATE","updated":int(time.time())}
 
 def archive_recent(limit=8):
+    # Recent Captures is an archive view, never a schedule/discovery view.
+    # Pregame/live rows may exist in the store for resilience, but cannot appear here.
     out=[]
-    for meta in STORE.games()[:max(1,min(int(limit or 8),24))]:
+    max_rows=max(1,min(int(limit or 8),24))
+    for meta in STORE.games():
         g=STORE.game(str(meta.get("id"))) or {}
+        done=bool(g.get("completed") or str(g.get("state") or "").lower()=="post" or str(g.get("status") or "").lower().startswith("final"))
+        if not done: continue
         teams=g.get("teams") or []
         out.append({
             "id":g.get("id") or meta.get("id"),"status":g.get("status") or meta.get("status"),
@@ -1093,8 +1112,9 @@ def archive_recent(limit=8):
             "teams":[{"abbr":t.get("abbr"),"name":t.get("name"),"side":t.get("side"),"score":t.get("score"),"logo":t.get("logo")} for t in teams],
             "players":len(g.get("players") or []),"plays":len(g.get("plays") or []),"drives":len(g.get("drives") or []),
             "quality":game_quality(g) if 'game_quality' in globals() else None,
-            "updated":meta.get("updated")
+            "updated":meta.get("updated"),"archive_state":"ARCHIVED"
         })
+        if len(out)>=max_rows: break
     return out
 
 def game_quality(g):
@@ -1111,6 +1131,68 @@ def game_quality(g):
     score=sum(weights[k] for k,v in checks.items() if v)
     label="COMPLETE" if score>=90 else "STRONG" if score>=70 else "PARTIAL" if score>=40 else "LIMITED"
     return {"score":score,"label":label,"checks":checks}
+
+
+def _is_final_game(g):
+    return bool(g and (g.get("completed") or str(g.get("state") or "").lower()=="post" or str(g.get("status") or "").lower().startswith("final")))
+
+def _archive_ready(g):
+    """A final is archive-ready when final state + two teams are present.
+    Player/team/play completeness is reported separately and never fabricated."""
+    return bool(_is_final_game(g) and len(g.get("teams") or [])==2)
+
+def archive_coverage(season=2026, season_type=2, through_week=None, force=False):
+    """Compare official discovered final game IDs with Atlas-owned final captures."""
+    now=time.time()
+    if not force and through_week is None and ARCHIVE_COVERAGE_CACHE.get("value") is not None and now-ARCHIVE_COVERAGE_CACHE.get("ts",0)<ARCHIVE_COVERAGE_CACHE_SECONDS:
+        return ARCHIVE_COVERAGE_CACHE["value"]
+    if through_week is None:
+        cur=week_schedule(season,None,season_type)
+        through_week=int(cur.get("week") or 1)
+    weeks=[]; total_expected=0; total_archived=0; total_partial=0; missing=[]
+    for w in range(1,max(1,int(through_week))+1):
+        wk=week_schedule(season,w,season_type)
+        finals=[x for x in (wk.get("games") or []) if _is_final_game(x)] if wk.get("ok") else []
+        archived=0; partial=0; miss=[]
+        for row in finals:
+            stored=STORE.game(str(row.get("id"))) or {}
+            if _archive_ready(stored):
+                archived+=1
+                q=game_quality(stored)
+                if int(q.get("score") or 0)<70: partial+=1
+            else:
+                miss.append(str(row.get("id")))
+        total_expected+=len(finals); total_archived+=archived; total_partial+=partial; missing.extend(miss)
+        weeks.append({"week":w,"expected_finals":len(finals),"archived":archived,"missing":len(miss),"partial":partial,"complete":bool(finals and archived==len(finals))})
+    result={"season":int(season),"season_type":int(season_type),"through_week":int(through_week),"expected_finals":total_expected,"archived":total_archived,"missing":len(missing),"partial":total_partial,"weeks":weeks,"missing_game_ids":missing}
+    if through_week is not None:
+        ARCHIVE_COVERAGE_CACHE.update({"ts":now,"value":result})
+    return result
+
+def backfill_once(force=False):
+    """Automatically recover completed games Atlas missed while asleep/offline.
+    Only provider-confirmed finals are eligible. At most BACKFILL_BATCH games hydrate per scan."""
+    global BACKFILL_LAST_SCAN
+    now=time.time()
+    with BACKFILL_LOCK:
+        if not force and BACKFILL_LAST_SCAN and now-BACKFILL_LAST_SCAN<BACKFILL_SCAN_SECONDS:
+            return LAST.get("backfill_stats") or {"status":"cooldown"}
+        BACKFILL_LAST_SCAN=now
+        cov=archive_coverage(force=True)
+        queue=list(cov.get("missing_game_ids") or [])[:BACKFILL_BATCH]
+        stats={"scanned":cov.get("expected_finals",0),"already_archived":cov.get("archived",0),"queued":len(queue),"captured":0,"failed":0,"remaining":cov.get("missing",0),"through_week":cov.get("through_week"),"batch":BACKFILL_BATCH}
+        errors=[]
+        for gid in queue:
+            try:
+                result=game(gid,True,prefer_archive=False)
+                if _archive_ready(result): stats["captured"]+=1
+                else:
+                    stats["failed"]+=1; errors.append(f"{gid}: provider did not return a final package")
+            except Exception as e:
+                stats["failed"]+=1; errors.append(f"{gid}: {type(e).__name__}")
+        stats["remaining"]=max(0,int(stats["remaining"])-int(stats["captured"]))
+        LAST["backfill"]=int(time.time()); LAST["backfill_stats"]=stats; LAST["backfill_errors"]=errors[-5:]
+        return stats
 
 def legacy_live():
     g=game(DEFAULT_GAME_ID);out={"game":{"status":g.get("status","Pregame"),"detScore":0,"bufScore":0,"period":g.get("period",0),"clock":g.get("clock","—"),"possession":"—","downDistance":"—","ballSpot":"—"},"plays":g.get("plays",[])[-24:],"team_stats":g.get("team_stats",{}),"players":g.get("players",[]),"linescores":{"DET":g.get("linescores",{}).get("DET",[]),"BUF":g.get("linescores",{}).get("BUF",[])},"drives":g.get("drives",[])[-8:]}
@@ -1145,6 +1227,9 @@ class H(SimpleHTTPRequestHandler):
             return self.sendj(game(gid))
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
+        if u.path=="/api/archive-coverage":
+            try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/recent":
             try: limit=int((q.get("limit") or [8])[0])
             except Exception: limit=8

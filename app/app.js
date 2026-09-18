@@ -334,3 +334,34 @@ const _overview105=overview;
 overview=function(g){if(!isFinal105(g))return _overview105(g);let a=team(g,'away'),h=team(g,'home'),p=g.plays?.at(-1),d=g.drives?.at(-1);return `<div class="finalSummary105"><div><small>FINAL</small><b>${esc(a.abbr)} ${esc(a.score)} — ${esc(h.score)} ${esc(h.abbr)}</b><span>Verified final game summary</span></div></div><div class="finalMetricsGrid105">${finalMetric105(g,'Total yards','Total Yards')}${finalMetric105(g,'Passing','Passing')}${finalMetric105(g,'Rushing','Rushing')}${finalMetric105(g,'First downs','1st Downs')}${finalMetric105(g,'Turnovers','Turnovers')}${finalMetric105(g,'3rd down','3rd down efficiency')}</div><div class="grid g2 glanceGrid"><div class="card"><div class="cardHead"><b>Final possession</b></div><div class="cardBody bigEvent">${d?`<small>${esc(d.team||'—')}</small><strong>${esc(d.result||'End of game')}</strong><span>${esc(d.yards??'—')} yards · ${esc(d.plays??'—')} plays · ${esc(d.time??'—')}</span>`:'<div class="empty">Final possession unavailable.</div>'}</div></div><div class="card"><div class="cardHead"><b>Final event</b></div><div class="cardBody bigEvent">${p?`<small>Q${esc(p.period)} · ${esc(p.clock)}</small><strong>${esc(p.text)}</strong>`:'<div class="empty">Final event unavailable.</div>'}</div></div></div><div class="grid g2 glanceGrid"><div class="card"><div class="cardHead"><b>Score flow</b></div><div class="cardBody chart">${scoreChart(g)}</div></div><div class="card"><div class="cardHead"><b>Top performers</b></div><div class="cardBody grid">${[pickCategoryLeader(g,'passing','YDS'),pickCategoryLeader(g,'rushing','YDS'),pickCategoryLeader(g,'receiving','YDS')].filter(Boolean).map(leaderHtml).join('')}</div></div></div>`}
 // Make game entities drillable without adding more navigation chrome.
 document.addEventListener('click',e=>{let t=e.target.closest('.score .team');if(t&&state.game){let ab=t.classList.contains('right')?team(state.game,'home').abbr:team(state.game,'away').abbr;ATLAS10.team=ab;route({view:'teams10'})}});
+
+/* ===== 10.6 PLAYER DATA ENGINE + PRODUCT POLISH ===== */
+const ATLAS106={version:'10.6'};
+function statGroups106(rows){const g={};(rows||[]).forEach(s=>(g[s.category||'Stats']??=[]).push(s));return g}
+function statMarkup106(rows){const g=statGroups106(rows);return Object.entries(g).slice(0,7).map(([cat,vals])=>`<div class="profileStatGroup"><small>${esc(cat)}</small><div>${vals.slice(0,14).map(s=>`<span><em>${esc(s.label)}</em><b>${esc(s.value)}</b></span>`).join('')}</div></div>`).join('')}
+const _showProfile106=showProfile;
+showProfile=async function(p){
+  await _showProfile106(p); if(!p?.id)return;
+  try{
+    const d=await api('/api/player?id='+encodeURIComponent(p.id)+'&_='+Date.now());if(!d.ok)return;
+    const pl=d.player||{}, season=$('#playerProfile .primeSeason');if(!season)return;
+    const head=season.querySelector('.cardHead'), body=season.querySelector('.cardBody');
+    if((pl.stats||[]).length){
+      if(head)head.innerHTML=`<b>2026 Regular Season</b><span class="badge sourceGood106">${esc(pl.stats_source||'VERIFIED SEASON SOURCE')}</span>`;
+      if(body)body.innerHTML=statMarkup106(pl.stats);
+    }else if((pl.captured_stats||[]).length){
+      if(head)head.innerHTML=`<b>Atlas Captured Production</b><span class="badge sourceCaptured106">${esc(pl.captured_games||0)} FINAL GAMES</span>`;
+      if(body)body.innerHTML=`<div class="capturedNotice106"><b>Full 2026 season total is unavailable from the connected provider.</b><span>Showing only verified box-score production from games stored by Atlas. This is not labeled as a season total.</span></div>${statMarkup106(pl.captured_stats)}`;
+    }else{
+      const checked=(pl.stats_attempt_errors||[]).map(x=>String(x).split(':')[0].replaceAll('_',' '));
+      if(head)head.innerHTML='<b>2026 Regular Season</b><span class="badge">SOURCE UNAVAILABLE</span>';
+      if(body)body.innerHTML=`<div class="empty statEmpty"><b>No verified 2026 total returned.</b><small>Atlas followed the provider statistics log and direct season surfaces${checked.length?' · '+esc([...new Set(checked)].join(' · ')):''}. Missing values remain —.</small></div>`;
+    }
+  }catch(e){}
+};
+// Product-wide wording: the star is a legend, not a claim about every search result.
+const _filterPlayers106=filterPlayers;
+filterPlayers=function(){_filterPlayers106();let m=document.querySelector('.playerDirectoryMeta span');if(m)m.textContent='★ marks a verified rank-1 depth-chart entry';};
+// FINAL games are archived states, not stale live feeds.
+const _sync106=renderSyncStatus;
+renderSyncStatus=function(){_sync106();const el=$('#healthText'),g=state.game;if(el&&isFinal105(g)){const syncAge=state.lastSync?Math.max(0,Math.round((Date.now()-state.lastSync)/1000)):0;el.textContent=`FINAL · ARCHIVED GAME · checked ${syncAge}s ago`;}}

@@ -594,15 +594,16 @@ def player_profile(aid):
     exp=(a.get("experience") or {}) if isinstance(a,dict) else {}
     college=(a.get("college") or {}) if isinstance(a,dict) else {}
     hs=(a.get("headshot") or {}) if isinstance(a,dict) else {}
-    stats,stats_source,stat_errors=_season_stats(aid)
-    gamelog=_game_log(aid)
     team_ab=team.get("abbreviation")
+    pname=a.get("fullName") or a.get("displayName")
+    stats,stats_source,stat_errors,captured_stats,captured_games=_season_stats(aid,pname,team_ab)
+    gamelog=_game_log(aid)
     depth_row={}
     if team_ab in TEAM_IDS:
         try:
             rd=team_roster(team_ab);depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
         except Exception:pass
-    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_status":"verified" if stats else "unavailable","stats_attempt_errors":stat_errors,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
+    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_status":"verified" if stats else "unavailable","stats_attempt_errors":stat_errors,"captured_stats":captured_stats,"captured_games":captured_games,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
     with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
     return value
 
@@ -807,42 +808,120 @@ def _core_stat_rows(raw):
             if label and val is not None:rows.append({'category':cname,'label':str(label),'value':val,'abbr':st.get('abbreviation'),'rank':st.get('rank')})
     return rows or _flatten_stats(raw)
 
-def _season_stats(aid):
-    """10.5 Data Core: use multiple season/player surfaces and preserve diagnostics."""
+def _ref_url(obj):
+    """Return an ESPN reference URL from the several shapes used by Core."""
+    if isinstance(obj,str): return obj
+    if isinstance(obj,dict): return obj.get('$ref') or obj.get('ref') or obj.get('href') or ''
+    return ''
+
+def _season_year(entry):
+    season=entry.get('season') if isinstance(entry,dict) else None
+    if isinstance(season,dict):
+        for key in ('year','season'):
+            try:
+                if int(season.get(key))==2026:return 2026
+            except Exception:pass
+    ref=_ref_url(season)
+    if '/seasons/2026' in ref:return 2026
+    try:
+        if int(entry.get('season'))==2026:return 2026
+    except Exception:pass
+    return None
+
+def _season_type_of(st,ref=''):
+    """Best-effort season type. 2 = NFL regular season."""
+    if '/types/2/' in str(ref):return 2
+    t=st.get('seasonType') or st.get('typeId') if isinstance(st,dict) else None
+    if isinstance(t,dict):t=t.get('id') or t.get('type')
+    try:return int(t)
+    except Exception:return None
+
+def _statisticslog_refs(aid, errors):
+    """Ask Core for its own canonical stat resources; regular-season totals first."""
+    try:
+        log=fetch(f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/{aid}/statisticslog","ESPN_CORE_STATISTICSLOG")
+    except Exception as e:
+        errors.append('ESPN_CORE_STATISTICSLOG:'+type(e).__name__);return []
+    ranked=[]
+    for entry in (log.get('entries') or []) if isinstance(log,dict) else []:
+        if not isinstance(entry,dict) or _season_year(entry)!=2026:continue
+        for st in entry.get('statistics') or []:
+            if not isinstance(st,dict):continue
+            ref=_ref_url(st.get('statistics')) or _ref_url(st)
+            if not ref:continue
+            ref=ref.replace('http://','https://')
+            typ=str(st.get('type') or '').lower()
+            stype=_season_type_of(st,ref)
+            # canonical regular-season total wins; then any regular-season resource;
+            # then any 2026 total. This avoids accidentally selecting postseason/preseason.
+            score=(100 if stype==2 else 0)+(20 if typ=='total' else 0)+(5 if '/statistics/0' in ref else 0)
+            ranked.append((score,ref))
+    ranked.sort(key=lambda x:-x[0])
+    seen=set();out=[]
+    for _,ref in ranked:
+        if ref not in seen:seen.add(ref);out.append(ref)
+    return out
+
+def _captured_player_aggregate(aid,name=None,team=None):
+    """Aggregate only Atlas-stored FINAL/complete game box-score rows for a player.
+    This is deliberately labeled CAPTURED, never presented as a full season total.
+    """
+    buckets={};games=set()
+    for gm in STORE.games():
+        g=STORE.game(gm['id']) or {}
+        if not any(x in str(g.get('status','')).lower() for x in ('final','complete','closed')):continue
+        matched=False
+        for p in g.get('players') or []:
+            same_id=aid and str(p.get('id') or '')==str(aid)
+            same_name=name and p.get('name')==name and (not team or p.get('team')==team)
+            if not (same_id or same_name):continue
+            matched=True
+            cat=p.get('category') or 'Captured'
+            for key,val in (p.get('stats') or {}).items():
+                label=str(key).split(':')[-1]
+                # Add numeric counting stats only. Rates/averages remain game-specific and
+                # are intentionally excluded rather than mathematically mis-aggregated.
+                try:num=float(str(val).replace(',','').replace('%',''))
+                except Exception:continue
+                upper=label.upper()
+                if any(tok in upper for tok in ('AVG','PCT','%','RATE','RTG','LONG','Y/A','Y/C')):continue
+                k=(cat,label);buckets[k]=buckets.get(k,0)+num
+            if matched:games.add(str(gm['id']))
+    rows=[]
+    for (cat,label),val in buckets.items():
+        rows.append({'category':cat,'label':label,'value':int(val) if float(val).is_integer() else round(val,2),'abbr':label,'rank':None})
+    return rows,len(games)
+
+def _season_stats(aid, name=None, team=None):
+    """10.6 Player Data Engine.
+    Core statisticslog is the directory of record. Direct endpoints and Web are fallbacks.
+    Atlas-captured aggregation is returned separately and never mislabeled as season data.
+    """
+    errors=[]
+    # 1) Follow the provider's canonical 2026 regular-season references first.
+    for ref in _statisticslog_refs(aid,errors):
+        try:
+            raw=fetch(ref,'ESPN_CORE_STATISTICSLOG_REF_2026');rows=_core_stat_rows(raw)
+            if rows:return rows,'ESPN CORE · 2026 REGULAR SEASON',errors,[],0
+            errors.append('ESPN_CORE_STATISTICSLOG_REF_2026:empty')
+        except Exception as e:errors.append('ESPN_CORE_STATISTICSLOG_REF_2026:'+type(e).__name__)
+    # 2) Known direct season resources.
     attempts=[
-      # This season-scoped surface has the simplest, most stable Core schema.
-      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{aid}/statistics","ESPN_CORE_SEASON_ATHLETE_STATS_2026"),
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/athletes/{aid}/statistics/0","ESPN_CORE_REGULAR_SEASON_SPLIT0_2026"),
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/athletes/{aid}/statistics","ESPN_CORE_REGULAR_SEASON_STATS_2026"),
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_WEB_ATHLETE_STATS_2026"),
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/overview","ESPN_WEB_ATHLETE_OVERVIEW"),
-      (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats","ESPN_WEB_ATHLETE_STATS"),
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/{aid}/statistics/0","ESPN_CORE_ATHLETE_TOTALS"),
     ]
-    errors=[]
     for url,src in attempts:
         try:
-            raw=fetch(url,src); rows=_core_stat_rows(raw)
-            if rows:return rows,src,errors
+            raw=fetch(url,src);rows=_core_stat_rows(raw)
+            if rows:return rows,('ESPN WEB · 2026' if 'WEB' in src else 'ESPN CORE · 2026'),errors,[],0
             errors.append(src+':empty')
         except Exception as e:errors.append(src+':'+type(e).__name__)
-    # statisticslog is the provider's own directory of an athlete's season-total resources.
-    try:
-        log=fetch(f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/{aid}/statisticslog","ESPN_CORE_STATISTICSLOG")
-        for entry in log.get('entries') or []:
-            season_ref=((entry.get('season') or {}).get('$ref') or '')
-            if '/seasons/2026' not in season_ref:continue
-            totals=[];others=[]
-            for st in entry.get('statistics') or []:
-                ref=((st.get('statistics') or {}).get('$ref') or '') if isinstance(st.get('statistics'),dict) else ''
-                if ref:(totals if str(st.get('type','')).lower()=='total' else others).append(ref)
-            for ref in totals+others:
-                try:
-                    raw=fetch(ref.replace('http://','https://'),'ESPN_CORE_STATISTICSLOG_2026');rows=_core_stat_rows(raw)
-                    if rows:return rows,'ESPN_CORE_STATISTICSLOG_2026',errors
-                except Exception as e:errors.append('ESPN_CORE_STATISTICSLOG_2026:'+type(e).__name__)
-    except Exception as e:errors.append('ESPN_CORE_STATISTICSLOG:'+type(e).__name__)
-    return [],None,errors
+    # 3) Honest local fallback: captured completed games only, separately labeled.
+    captured,n=_captured_player_aggregate(aid,name,team)
+    return [],None,errors,captured,n
 
 def league_hq():
     now=time.time()
@@ -908,7 +987,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.5","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.6","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

@@ -1,3 +1,7 @@
+ATLAS 17.5 — SPECTRUM CORE
+
+Visual analytics release: team signal rings, league differential map, player composition donut, 32-team GM personnel heatmap, expanded NFL logo identity, and clarified Atlas Performance Index baseline.
+
 # ATLAS 17.4 — VISUAL CORE
 
 Complete Render-ready build.

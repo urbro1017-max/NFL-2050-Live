@@ -103,3 +103,31 @@ body{background:radial-gradient(circle at 72% -12%,rgba(58,167,255,.16),transpar
 .title{letter-spacing:-.045em}.cardHead{background:rgba(255,255,255,.015)}
 .teamStatGroups103{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.teamStatGroups103 section{padding:14px;border:1px solid var(--atlas-line);border-radius:15px;background:rgba(3,12,22,.32)}.teamStatGroups103 section>small{display:block;color:#78cffb;font-weight:900;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}.teamStatGroups103 section>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.teamStatGroups103 span{padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.035);display:flex;justify-content:space-between;gap:8px}.teamStatGroups103 em{font-style:normal;color:var(--atlas-soft);font-size:11px}.teamStatGroups103 b{font-size:13px}.primeProfile{max-width:1220px;margin:auto}.primeIdentity{min-height:190px;background:linear-gradient(120deg,rgba(58,167,255,.09),rgba(255,255,255,.018));border-radius:22px}.primeSeason{margin-top:14px}.profileStatGroup>div{gap:8px}.profileStatGroup span{border:1px solid rgba(103,190,255,.1)}
 @media(max-width:760px){.teamStatGroups103{grid-template-columns:1fr}.teamStatGroups103 section>div{grid-template-columns:1fr}}
+
+
+/* ===== 10.4 UNIFIED PRIME ===== */
+:root{--atlasBlue:#3aa7ff;--atlasCyan:#70e4ff;--surface104:#0b1320;--surface104b:#101b2b;--line104:#20344b;--text104:#eef6ff;--muted104:#8ea4bb}
+body{background:radial-gradient(900px 500px at 78% -10%,rgba(42,130,255,.13),transparent 62%),linear-gradient(180deg,#07101b 0%,#08111c 100%)}
+.rail{background:linear-gradient(180deg,#08111d,#07101a 70%,#091521);border-right:1px solid #17304a}
+.brandMark{box-shadow:0 0 24px rgba(58,167,255,.34)}
+.top{backdrop-filter:blur(16px);background:rgba(7,16,27,.82);border-bottom:1px solid #17304a}
+.navGroup button{border:1px solid transparent;border-radius:12px;margin:3px 8px}
+.navGroup button:hover{background:#0e1c2c;border-color:#1e3d5c}
+.navGroup button.active{background:linear-gradient(90deg,rgba(58,167,255,.17),rgba(112,228,255,.05));border-color:#24527a;box-shadow:inset 3px 0 0 var(--atlasBlue)}
+.productHero{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin:2px 0 18px;padding:4px 2px 16px;border-bottom:1px solid #19324a}
+.productHero .title{margin:3px 0 4px}.productHero .sub{margin:0;max-width:720px}
+.contextActions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.contextActions button{background:#0e1b2a;color:#bcd0e5;border:1px solid #25425e;border-radius:999px;padding:9px 13px;font-weight:750;cursor:pointer}.contextActions button:hover{color:#fff;border-color:#3aa7ff;background:#10243a}
+.card,.kpi,.essentialPanel{border-color:#1d354d!important;background:linear-gradient(180deg,rgba(15,27,43,.96),rgba(10,20,33,.96))!important;box-shadow:0 14px 40px rgba(0,0,0,.13)}
+.cardHead{border-bottom-color:#1d354d!important}.cardHead b{letter-spacing:.01em}
+.leagueTabs,.workspaceTabs,.lab10Tabs{background:#091522;border:1px solid #1b354e;border-radius:14px;padding:5px;gap:4px;overflow:auto;scrollbar-width:thin}
+.leagueTabs button,.workspaceTabs button,.lab10Tabs button{white-space:nowrap;border-radius:10px!important}
+.dataTable thead th{position:sticky;top:0;background:#0b1725;z-index:2;color:#8fb0cd;font-size:11px;letter-spacing:.07em}.dataTable tbody tr:hover{background:rgba(58,167,255,.055)}
+.primeProfile{border:1px solid #23435f;border-radius:22px;overflow:hidden;background:linear-gradient(145deg,#0c1b2c,#09131f 62%)}
+.primeIdentity{padding:26px!important;background:radial-gradient(600px 180px at 15% 0%,color-mix(in srgb,var(--pc) 22%,transparent),transparent 68%)}
+.primeBio{border-top:1px solid #1e3b55;border-bottom:1px solid #1e3b55;background:#0a1725}
+.primeSeason{margin:16px!important}.seasonTeamStats103.unifiedPriority{border-color:#2d608b!important;box-shadow:0 0 0 1px rgba(58,167,255,.08),0 20px 50px rgba(0,0,0,.18)}
+.teamStatGroups103 section{background:#0b1826;border:1px solid #1c3852;border-radius:14px;padding:14px}.teamStatGroups103 section>small{color:#72cfff;font-weight:800;letter-spacing:.08em}.teamStatGroups103 span{background:#0d1d2e;border-color:#203d58!important}
+.universeToolbar{position:sticky;top:68px;z-index:8;background:rgba(8,17,28,.92);backdrop-filter:blur(14px);padding:10px;border:1px solid #1d3a54;border-radius:14px}
+.empty{border-radius:14px!important;background:#0a1724!important;border:1px dashed #29445d!important;color:#8fa7bd!important}
+.badge{border-radius:999px}.badge.derived{color:#a9dfff}
+@media(max-width:900px){.productHero{align-items:flex-start;flex-direction:column}.contextActions{justify-content:flex-start}.universeToolbar{top:56px}}

@@ -782,6 +782,7 @@ def _team_season_stats(team):
     tid=TEAM_IDS[team]
     attempts=[
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/{tid}/statistics","ESPN_CORE_TEAM_STATS_2026"),
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/{tid}/statistics/0","ESPN_CORE_TEAM_STATS_2026_SPLIT0"),
       (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{tid}?enable=stats","ESPN_SITE_TEAM_STATS_2026"),
     ]
     errs=[]
@@ -809,6 +810,8 @@ def _core_stat_rows(raw):
 def _season_stats(aid):
     """10.3: Core season-scoped athlete stats first; web surfaces are fallback only."""
     attempts=[
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/athletes/{aid}/statistics","ESPN_CORE_REGULAR_SEASON_ATHLETE_STATS_2026"),
+      (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/athletes/{aid}/statistics/0","ESPN_CORE_REGULAR_SEASON_ATHLETE_STATS_2026_SPLIT0"),
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/{aid}/statistics","ESPN_CORE_SEASON_ATHLETE_STATS_2026"),
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats?season=2026&seasontype=2","ESPN_WEB_ATHLETE_STATS_2026"),
       (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}/stats","ESPN_WEB_ATHLETE_STATS"),
@@ -900,7 +903,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
-        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.3","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/health":return self.sendj({"ok":True,"version":"10.4","database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]

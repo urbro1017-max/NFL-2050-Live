@@ -19,7 +19,7 @@ window.addEventListener('scroll',()=>{clearTimeout(window._st);window._st=setTim
 function renderRoute(){
   $$('.view').forEach(x=>x.classList.toggle('active',x.dataset.view===state.view));
   $$('#mainNav button').forEach(x=>x.classList.toggle('active',x.dataset.view===state.view));
-  $('#topTitle').textContent=({home:'LIVE GAME',games:'NFL GAMES',players:'PLAYERS',analytics:'ANALYZE',league:'LEAGUE',warroom:'WAR ROOM',frontoffice:'TEAMS + FRONT OFFICE',filmroom:'FILM ROOM',compare:'COMPARE',control:'COMMAND',sunday:'SCOREBOARD',studio:'STAT STUDIO',gamedna:'GAME DNA',situations:'SITUATION LAB',dashboard:'MY ATLAS',archive:'ARCHIVE',about:'ABOUT',teams10:'TEAMS',lab10:'LAB'})[state.view]||'GRIDIRON ATLAS';
+  $('#topTitle').textContent=({home:'LIVE GAME',games:'NFL GAMES',players:'PLAYERS',analytics:'ANALYZE',league:'LEAGUE',warroom:'WAR ROOM',frontoffice:'TEAM TOOLS',filmroom:'FILM ROOM',compare:'COMPARE',control:'COMMAND',sunday:'SCOREBOARD',studio:'STAT STUDIO',gamedna:'GAME DNA',situations:'SITUATION LAB',dashboard:'MY ATLAS',archive:'ARCHIVE',about:'ABOUT',teams10:'TEAMS',lab10:'LAB'})[state.view]||'GRIDIRON ATLAS';
   $('#backBtn').disabled=history.length<=1;
   if(state.view==='games')loadGames();
   if(state.view==='players')loadPlayerDb();
@@ -297,3 +297,22 @@ showProfile=async function(p){
     }
   }catch(e){}
 };
+
+
+/* ===== 10.4 UNIFIED PRIME — ONE PRODUCT LAYER ===== */
+const ATLAS104={version:'10.4',teamTab:'overview'};
+function jumpLeague104(tab){state.view='league';renderRoute();setTimeout(()=>{let b=document.querySelector(`[data-ltab="${tab}"]`);if(b)b.click()},30)}
+function jumpTeam104(tab){ATLAS104.teamTab=tab;if(tab==='overview'){route({view:'teams10'});return}FO.team=ATLAS10.team;if(tab==='roster'){FO.tab='roster';route({view:'frontoffice'});return}if(tab==='trends'){FO.tab='trends';route({view:'frontoffice'});return}if(tab==='stats'){route({view:'teams10'});setTimeout(()=>document.querySelector('.seasonTeamStats103')?.scrollIntoView({behavior:'smooth',block:'start'}),220);return}}
+function jumpPlayer104(tab){if(tab==='leaders'){jumpLeague104('leaders');return}if(tab==='positions'){FO.tab='positions';route({view:'frontoffice'});return}}
+function wireUnified104(){
+  document.querySelectorAll('[data-league-jump]').forEach(b=>b.onclick=()=>jumpLeague104(b.dataset.leagueJump));
+  document.querySelectorAll('[data-team-jump]').forEach(b=>b.onclick=()=>jumpTeam104(b.dataset.teamJump));
+  document.querySelectorAll('[data-player-jump]').forEach(b=>b.onclick=()=>jumpPlayer104(b.dataset.playerJump));
+  document.querySelectorAll('[data-lab-jump]').forEach(b=>b.onclick=()=>{ATLAS10.lab=b.dataset.labJump;route({view:'lab10'})});
+  let st=document.querySelector('#openSettings104');if(st)st.onclick=()=>document.querySelector('#settings')?.classList.add('open');
+}
+const _renderRoute104=renderRoute;
+renderRoute=function(){_renderRoute104();wireUnified104();document.body.dataset.workspace=state.view;};
+const _renderTeamUniverse104=renderTeamUniverse10;
+renderTeamUniverse10=function(d=leagueData){_renderTeamUniverse104(d);wireUnified104();let host=document.querySelector('#teamUniverseBody');if(!host)return;let stat=host.querySelector('.seasonTeamStats103'), roster=host.querySelector('.primeUniverseRoster');if(stat)stat.classList.add('unifiedPriority');if(roster)roster.classList.add('unifiedSecondary');};
+wireUnified104();

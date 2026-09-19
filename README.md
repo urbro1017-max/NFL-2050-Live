@@ -1,4 +1,4 @@
-ATLAS 25.0 — WORKSPACE WORLDS
+ATLAS 26.0 — WORKSPACE WORLDS
 
 Purpose-built redesign of internal workspaces while preserving the ATLAS 23 homepage and data engine.
 

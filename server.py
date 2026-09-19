@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="35.0"
-BUILD_NAME="ATLAS SUNDAY READY"
+VERSION="37.0"
+BUILD_NAME="ATLAS FORECAST ENGINE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1298,6 +1298,101 @@ def atlas_insights(team=None):
         out.append({"title":"Archive sample","text":f"ATLAS currently holds {len(rows)} team-game rows from completed games.","game_id":rows[-1]['game_id']})
     return {"ok":True,"team":d.get("team"),"insights":out,"source":"ATLAS_DERIVED_FROM_FINAL_ARCHIVE","updated":int(time.time())}
 
+
+def _record_parts(record):
+    parts=str(record or '0-0').split('-')
+    try:w=float(parts[0] or 0)
+    except:w=0
+    try:l=float(parts[1] or 0) if len(parts)>1 else 0
+    except:l=0
+    try:t=float(parts[2] or 0) if len(parts)>2 else 0
+    except:t=0
+    return w,l,t
+
+def _clamp(v,lo,hi): return max(lo,min(hi,v))
+
+def atlas_projection_engine():
+    """Transparent schedule-neutral ATLAS projections. Forecasts are model outputs, never provider facts."""
+    lg=league_hq(); standings=lg.get('standings') or []; power=lg.get('power') or []
+    power_by={x.get('abbr'):x for x in power}; archive=archive_intelligence(); arch_by={x.get('abbr'):x for x in archive.get('teams') or []}
+    teams=[]
+    for r in standings:
+        ab=norm_team_abbr(r.get('abbr')); w,l,t=_record_parts(r.get('record')); gp=w+l+t
+        pct=(w+.5*t)/gp if gp else .5
+        diff=_num(r.get('diff')); dpg=diff/gp if gp else 0
+        recent=archive_trends(ab).get('games') or []
+        recent_margin=sum(x.get('margin',0) for x in recent[-3:])/len(recent[-3:]) if recent else dpg
+        # 55% results, 25% scoring margin, 20% recent stored form. Each modifier is bounded.
+        record_component=pct
+        margin_component=.5+_clamp(dpg,-14,14)/28*.5
+        form_component=.5+_clamp(recent_margin,-14,14)/28*.5
+        expected=_clamp(.55*record_component+.25*margin_component+.20*form_component,.15,.85)
+        remaining=max(0,17-gp)
+        projected_wins=w+.5*t+remaining*expected
+        idx=(power_by.get(ab) or {}).get('atlasIndex')
+        teams.append({'abbr':ab,'name':r.get('name'),'logo':r.get('logo'),'record':r.get('record'),'games_played':gp,'wins':w,'losses':l,'ties':t,'point_diff':diff,'diff_per_game':round(dpg,2),'recent_margin':round(recent_margin,2),'atlas_index':idx,'strength':round(expected*100,1),'projected_wins':round(projected_wins,1),'projected_losses':round(17-projected_wins,1),'remaining':remaining})
+    teams.sort(key=lambda x:(-x['strength'],-x['projected_wins'],x['abbr']))
+    for i,x in enumerate(teams,1):x['projection_rank']=i
+    strength={x['abbr']:x for x in teams}
+    wk=week_schedule(2026,None,2); games=[]
+    for g in wk.get('games') or []:
+        if g.get('state')!='pre':continue
+        ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {}); home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})
+        aa=norm_team_abbr(away.get('abbr')); ha=norm_team_abbr(home.get('abbr')); av=strength.get(aa); hv=strength.get(ha)
+        if not av or not hv:continue
+        # Small home-field adjustment; probability remains bounded to communicate uncertainty.
+        home_prob=_clamp(50+(hv['strength']-av['strength'])*0.72+2.0,20,80); away_prob=100-home_prob
+        pick=ha if home_prob>=away_prob else aa; conf=abs(home_prob-50)*2
+        games.append({'id':g.get('id'),'date':g.get('date'),'away':aa,'home':ha,'away_prob':round(away_prob,1),'home_prob':round(home_prob,1),'pick':pick,'confidence':round(conf,1),'status':g.get('status')})
+    fantasy=[]
+    # PPR-like archive projection: latest-3 weighted 60%, full stored sample 40%.
+    per={}
+    def statval(stats,*needles):
+        for k,v in (stats or {}).items():
+            ku=str(k).upper().replace(' ','')
+            if any(n in ku for n in needles):
+                try:return float(str(v).replace(',','').split('/')[0])
+                except:pass
+        return 0.0
+    def fp_for(pr):
+        cats=pr.get('categories') or {}; total=0
+        for cname,st in cats.items():
+            cu=str(cname).upper()
+            if 'PASS' in cu:
+                total+=statval(st,'YDS','YARDS')/25 + statval(st,'TD')*4 - statval(st,'INT')*2
+            elif 'RUSH' in cu:
+                total+=statval(st,'YDS','YARDS')/10 + statval(st,'TD')*6
+            elif 'RECEIV' in cu:
+                total+=statval(st,'REC') + statval(st,'YDS','YARDS')/10 + statval(st,'TD')*6
+            elif 'FUMBL' in cu:
+                total-=statval(st,'LOST')*2
+        return total
+    # Build one player/category object per archived game.
+    for meta in STORE.games():
+        g=STORE.game(str(meta.get('id'))) or {}
+        if not _is_final_game(g):continue
+        game_players={}
+        for pr in g.get('players') or []:
+            key=str(pr.get('id') or (pr.get('name'),pr.get('team'))); x=game_players.setdefault(key,{'id':pr.get('id'),'name':pr.get('name'),'team':norm_team_abbr(pr.get('team')),'position':pr.get('position'),'categories':{}})
+            x['categories'][str(pr.get('category') or 'Other')]=pr.get('stats') or {}
+        for key,pr in game_players.items():
+            pts=fp_for(pr)
+            if pts==0:continue
+            x=per.setdefault(key,{'id':pr.get('id'),'name':pr.get('name'),'team':pr.get('team'),'position':pr.get('position'),'games':[]});x['games'].append(pts)
+    for x in per.values():
+        vals=x['games']; season=sum(vals)/len(vals); last=vals[-3:]; recent=sum(last)/len(last); proj=.4*season+.6*recent
+        fantasy.append({**{k:x.get(k) for k in ('id','name','team','position')},'games':len(vals),'season_fppg':round(season,1),'recent3_fppg':round(recent,1),'projected_fantasy':round(proj,1)})
+    fantasy.sort(key=lambda x:-x['projected_fantasy']); fantasy=fantasy[:60]
+    # MVP is an ATLAS model ladder, not an official award forecast. Production + projected team strength.
+    maxfp=max([x['projected_fantasy'] for x in fantasy] or [1]); mvp=[]
+    for x in fantasy:
+        if str(x.get('position') or '').upper() not in ('QB','RB','WR','TE'):continue
+        team_strength=(strength.get(x.get('team')) or {}).get('strength',50)
+        score=70*(x['projected_fantasy']/maxfp)+30*(team_strength/100)
+        mvp.append({**x,'mvp_score':round(score,1),'team_strength':team_strength})
+    mvp.sort(key=lambda x:-x['mvp_score']);mvp=mvp[:15]
+    return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'formula':{'team_strength':'55% current win rate + 25% bounded point-differential/game + 20% bounded recent ATLAS archive margin','season_projection':'current wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like stored-game production: 40% full ATLAS sample + 60% latest 3 stored games','mvp':'70% normalized ATLAS fantasy projection + 30% projected team strength; skill positions with stored production'},'source':'ESPN_STANDINGS+ATLAS_FINAL_ARCHIVE_DERIVED_MODEL','updated':int(time.time())}
+
 def atlas_search(q):
     q=str(q or '').strip().lower()
     if len(q)<2:return {"ok":True,"query":q,"results":[]}
@@ -1400,6 +1495,9 @@ class H(SimpleHTTPRequestHandler):
             return self.sendj(atlas_insights((q.get("team") or [None])[0]))
         if u.path=="/api/search":
             return self.sendj(atlas_search((q.get("q") or [""])[0]))
+        if u.path=="/api/projections":
+            try:return self.sendj(atlas_projection_engine())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/archive-coverage":
             try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)

@@ -878,32 +878,12 @@ const _route190=renderRoute;renderRoute=function(){_route190();syncVersion190();
 const _selected190=loadSelected;loadSelected=async function(...args){let r=await _selected190(...args);setTimeout(installGameNav190,40);return r};
 setTimeout(()=>{syncVersion190();installGameNav190();if(state.view==='dashboard')briefing190()},300);
 
-/* ============================================================
-   ATLAS 22.0 — New website shell + front page
-   ============================================================ */
-(function(){
-  function a22Team(g,side){try{return team(g,side)||{}}catch(e){return {}}}
-  function a22Route(view){route({view});}
-  function installA22Header(){
-    const top=document.querySelector('.top'); if(!top||top.dataset.a22)return; top.dataset.a22='1';
-    top.querySelector('div:first-child').innerHTML=`<div class="a22Header"><div class="a22Brand" data-a22="home"><div class="a22Mark"></div><div><b>ATLAS</b><small>FOOTBALL INTELLIGENCE</small></div></div><nav class="a22Nav"><button data-a22="home">Home</button><button data-a22="games">Games</button><button data-a22="teams10">Teams</button><button data-a22="players">Players</button><button data-a22="intelligence">Intelligence</button><button data-a22="gm15">GM Lab</button><button data-a22="league">League</button></nav></div>`;
-    top.querySelectorAll('[data-a22]').forEach(x=>x.onclick=()=>a22Route(x.dataset.a22));
-  }
-  function gameCard(g){let a=a22Team(g,'away'),h=a22Team(g,'home');return `<div class="a22Game" data-a22game="${esc(g.id)}"><div><b>${esc(a.abbr||'AWY')}</b><b>${esc(a.score??'—')}</b></div><div><b>${esc(h.abbr||'HOME')}</b><b>${esc(h.score??'—')}</b></div><small>${esc(g.status||g.detail||'NFL')}</small></div>`}
-  function renderA22Home(){
-    const sec=document.querySelector('.view[data-view="home"]'); if(!sec)return;
-    let games=(state.games||[]).slice(0,6), live=(state.games||[]).filter(g=>String(g.state||'').toLowerCase()==='in');
-    let lg=leagueData||{}, teams=lg.teams||[], ppg=avg190(teams.map(x=>x.ppg)), ypg=avg190(teams.map(x=>x.ypg));
-    sec.innerHTML=`<div class="a22Home">
-      <section class="a22Hero"><div class="a22HeroCopy"><div class="a22Kicker">DATA · CONTEXT · A DEEPER GAME</div><h2>Football<br><em>Deeper.</em></h2><p>One place to follow the league, understand teams and players, investigate every game, and work like a football decision-maker.</p><div class="a22HeroActions"><button class="primary" data-a22go="games">ENTER ATLAS →</button><button data-a22go="teams10">EXPLORE TEAMS</button></div></div><div class="a22FieldArt"></div><div class="a22HeroIndex"><span>TEAMS</span><span>PLAYERS</span><span>GAMES</span><span>TRENDS</span><span>STRATEGY</span><span>DECISIONS</span></div></section>
-      <section class="a22Ticker"><div class="a22TickerTitle"><i></i>${live.length?'LIVE GAMES':'NFL GAMES'}</div>${games.length?games.map(gameCard).join(''):'<div class="a22Game"><small>Connecting to current NFL schedule…</small></div>'}</section>
-      <section class="a22Content"><article class="a22Feature"><div class="a22SectionLabel">ATLAS / LEAGUE PULSE</div><h3>The league, without the noise.</h3><p>Start broad, then drill all the way down—from league context to a team, player, game, drive, and individual play.</p><div class="a22StatGrid"><div class="a22Stat"><b>32</b><small>NFL TEAMS</small></div><div class="a22Stat"><b>${ppg===null?'—':ppg.toFixed(1)}</b><small>AVG PPG · FEED</small></div><div class="a22Stat"><b>${ypg===null?'—':Math.round(ypg)}</b><small>AVG YPG · FEED</small></div></div></article><aside class="a22Brief"><div class="a22SectionLabel">START HERE</div><div class="a22BriefList"><div class="a22BriefRow"><i></i><div><b>Game Intelligence</b><small>Drive story, impact and captured game context.</small></div><em>01</em></div><div class="a22BriefRow"><i></i><div><b>Team Universe</b><small>League-relative identity and roster context.</small></div><em>02</em></div><div class="a22BriefRow"><i></i><div><b>Front Office</b><small>Roster structure and decision workspaces.</small></div><em>03</em></div></div></aside></section>
-      <section class="a22Explore"><div class="a22ExploreHead"><div><div class="a22SectionLabel">WORKSPACES</div><h3>Explore ATLAS</h3></div><small>PLAY SMARTER · SEE FURTHER</small></div><div class="a22ExploreGrid"><button data-a22go="intelligence"><em>↗</em><b>Game Intelligence</b><span>Game story, drives, impact and deeper analysis.</span></button><button data-a22go="teams10"><em>↗</em><b>Team Universe</b><span>Team DNA, production, roster and league context.</span></button><button data-a22go="players"><em>↗</em><b>Player Universe</b><span>Profiles, production and position-specific data.</span></button><button data-a22go="gm15"><em>↗</em><b>GM Lab</b><span>Personnel structure and front-office tools.</span></button><button data-a22go="lab10"><em>↗</em><b>Research Lab</b><span>Explore captured plays, drives and situations.</span></button></div></section>
-    </div>`;
-    sec.querySelectorAll('[data-a22go]').forEach(x=>x.onclick=()=>a22Route(x.dataset.a22go));
-    sec.querySelectorAll('[data-a22game]').forEach(x=>x.onclick=()=>{let id=x.dataset.a22game;route({view:'games',tab:'overview',gameId:id});loadSelected(id)});
-  }
-  function syncA22(){document.title='ATLAS 22.0 — FOOTBALL DEEPER';installA22Header();document.querySelectorAll('.a22Nav button').forEach(b=>b.classList.toggle('active',b.dataset.a22===state.view));if(state.view==='home')renderA22Home()}
-  const prev=renderRoute; renderRoute=function(){prev();setTimeout(syncA22,30)};
-  setTimeout(syncA22,500);
-})();
+/* ===== ATLAS 23 — NEW WEBSITE SHELL + EDITORIAL HOME ===== */
+function atlas23Logo(ab, fallback=''){return fallback||`https://a.espncdn.com/i/teamlogos/nfl/500/${String(ab||'').toLowerCase()}.png`}
+function atlas23GameCard(g){let a=team(g,'away'),h=team(g,'home'),ph=phase(g),live=g.state==='in';return `<button class="atlas23GameCard" data-a23game="${esc(g.id)}"><header><span>${live?'● LIVE':esc(ph)}</span><span>${esc(g.status||g.clock||'')}</span></header><div class="atlas23GameTeam"><img src="${esc(atlas23Logo(a.abbr,a.logo))}" onerror="this.style.visibility='hidden'"><b>${esc(a.abbr)}</b><strong>${esc(a.score??'—')}</strong></div><div class="atlas23GameTeam"><img src="${esc(atlas23Logo(h.abbr,h.logo))}" onerror="this.style.visibility='hidden'"><b>${esc(h.abbr)}</b><strong>${esc(h.score??'—')}</strong></div></button>`}
+function renderAtlas23Home(){if(state.view!=='home')return;let rail=$('#atlas23GameRail');if(!rail)return;let src=(ATLAS110?.data?.games||state.games||[]),f=ATLAS110?.filter||'all';let games=src.filter(g=>f==='all'||(f==='live'&&g.state==='in')||(f==='upcoming'&&g.state==='pre')||(f==='final'&&(g.state==='post'||g.completed))).slice(0,8);rail.innerHTML=games.length?games.map(atlas23GameCard).join(''):'<div class="atlas23Loading">No games match this view.</div>';let gc=$('#atlas23GamesCount');if(gc)gc.textContent=src.length||'—';let ds=$('#atlas23DataState');if(ds)ds.textContent=state.syncFailures?'CHECK':'LIVE';rail.querySelectorAll('[data-a23game]').forEach(x=>x.onclick=async()=>{let id=x.dataset.a23game;await loadSelected(id);route({view:'games',tab:'overview',gameId:id})});$$('#weekFilter111 [data-wfilter]').forEach(b=>b.classList.toggle('active',b.dataset.wfilter===f));}
+const _atlas23HomeRender=renderHome;renderHome=function(){_atlas23HomeRender();renderAtlas23Home()};
+const _atlas23Route=renderRoute;renderRoute=function(){_atlas23Route();document.title='ATLAS — Football Intelligence';setTimeout(()=>{document.title='ATLAS — Football Intelligence';renderAtlas23Home()},80)};
+document.addEventListener('click',e=>{let f=e.target.closest('#weekFilter111 [data-wfilter]');if(f)setTimeout(renderAtlas23Home,20)});
+setInterval(()=>{if(state.view==='home')renderAtlas23Home()},5000);
+setTimeout(()=>{document.title='ATLAS — Football Intelligence';renderAtlas23Home()},500);

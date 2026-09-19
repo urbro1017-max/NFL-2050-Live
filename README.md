@@ -1,15 +1,7 @@
-# ATLAS 31.0 — BLACKBOX
+# ATLAS 32.0 — Analytics Engine
 
-ATLAS 31 keeps the clean-slate frontend architecture from 27.0 and adds a cohesive product-wide visual system: shared navigation, spacing, typography, motion, borders, surface language, responsive behavior, and interaction states while preserving each workspace's distinct job.
+Clean-slate ATLAS frontend with verified-data analytics workspaces.
 
-## Workspaces
-- Home — editorial football intelligence landing page
-- Game Center — schedule + matchup stage
-- League — conference/division landscape
-- Teams — team-colored command center + roster architecture
-- Players — search-first scouting index
-- Intelligence — game room + field + captured play tape
-- Front Office — personnel board / position rooms
-- Data — operations pipeline
+Highlights: Team Analytics Lab, Player Lab/profile drilldowns, club Compare Lab, provenance badges, interactive pins/My ATLAS, radar/profile visualizations, synchronized metric duels, roster/game/league telemetry, 32-team normalization, and truth-preserving missing-data states.
 
-The backend and truth-preserving data rules are unchanged. Render deployment remains `python server.py`.
+Render-ready. Python backend remains the source of public ESPN-derived operational data and ATLAS archive data. No fabricated performance values are added by the client.

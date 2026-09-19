@@ -20,5 +20,5 @@ Focus: denser information hierarchy, readable typography, larger visual identity
 
 Data integrity policy remains unchanged: unsupported metrics are never fabricated; NGS/AWS references are not represented as raw tracking feeds.
 
-## ATLAS 23.0 — NEW WEBSITE
+## ATLAS 24.0 — NEW WEBSITE
 This release replaces the legacy rail-first home experience with a new horizontal product shell and a structurally new editorial front page while preserving the ATLAS data engine and workspaces.

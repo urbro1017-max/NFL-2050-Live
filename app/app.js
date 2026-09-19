@@ -878,7 +878,7 @@ const _route190=renderRoute;renderRoute=function(){_route190();syncVersion190();
 const _selected190=loadSelected;loadSelected=async function(...args){let r=await _selected190(...args);setTimeout(installGameNav190,40);return r};
 setTimeout(()=>{syncVersion190();installGameNav190();if(state.view==='dashboard')briefing190()},300);
 
-/* ===== ATLAS 23 — NEW WEBSITE SHELL + EDITORIAL HOME ===== */
+/* ===== ATLAS 24 — NEW WEBSITE SHELL + EDITORIAL HOME ===== */
 function atlas23Logo(ab, fallback=''){return fallback||`https://a.espncdn.com/i/teamlogos/nfl/500/${String(ab||'').toLowerCase()}.png`}
 function atlas23GameCard(g){let a=team(g,'away'),h=team(g,'home'),ph=phase(g),live=g.state==='in';return `<button class="atlas23GameCard" data-a23game="${esc(g.id)}"><header><span>${live?'● LIVE':esc(ph)}</span><span>${esc(g.status||g.clock||'')}</span></header><div class="atlas23GameTeam"><img src="${esc(atlas23Logo(a.abbr,a.logo))}" onerror="this.style.visibility='hidden'"><b>${esc(a.abbr)}</b><strong>${esc(a.score??'—')}</strong></div><div class="atlas23GameTeam"><img src="${esc(atlas23Logo(h.abbr,h.logo))}" onerror="this.style.visibility='hidden'"><b>${esc(h.abbr)}</b><strong>${esc(h.score??'—')}</strong></div></button>`}
 function renderAtlas23Home(){if(state.view!=='home')return;let rail=$('#atlas23GameRail');if(!rail)return;let src=(ATLAS110?.data?.games||state.games||[]),f=ATLAS110?.filter||'all';let games=src.filter(g=>f==='all'||(f==='live'&&g.state==='in')||(f==='upcoming'&&g.state==='pre')||(f==='final'&&(g.state==='post'||g.completed))).slice(0,8);rail.innerHTML=games.length?games.map(atlas23GameCard).join(''):'<div class="atlas23Loading">No games match this view.</div>';let gc=$('#atlas23GamesCount');if(gc)gc.textContent=src.length||'—';let ds=$('#atlas23DataState');if(ds)ds.textContent=state.syncFailures?'CHECK':'LIVE';rail.querySelectorAll('[data-a23game]').forEach(x=>x.onclick=async()=>{let id=x.dataset.a23game;await loadSelected(id);route({view:'games',tab:'overview',gameId:id})});$$('#weekFilter111 [data-wfilter]').forEach(b=>b.classList.toggle('active',b.dataset.wfilter===f));}
@@ -887,3 +887,20 @@ const _atlas23Route=renderRoute;renderRoute=function(){_atlas23Route();document.
 document.addEventListener('click',e=>{let f=e.target.closest('#weekFilter111 [data-wfilter]');if(f)setTimeout(renderAtlas23Home,20)});
 setInterval(()=>{if(state.view==='home')renderAtlas23Home()},5000);
 setTimeout(()=>{document.title='ATLAS — Football Intelligence';renderAtlas23Home()},500);
+
+/* ===== ATLAS 24 — EDITORIAL WORKSPACE NORMALIZER ===== */
+(function(){
+  const sectionNames={games:'GAMES',league:'LEAGUE',teams10:'TEAMS',players:'PLAYERS',intelligence:'INTELLIGENCE',gm15:'FRONT OFFICE',network17:'DATA',analytics:'ANALYSIS',warroom:'WAR ROOM',frontoffice:'FRONT OFFICE',filmroom:'FILM',compare:'COMPARE',control:'COMMAND',studio:'STUDIO',gamedna:'GAME DNA',situations:'SITUATIONS',dashboard:'MY ATLAS',archive:'ARCHIVE',lab10:'RESEARCH'};
+  function editorialize24(){
+    document.querySelectorAll('.view').forEach(v=>{
+      if(v.classList.contains('atlas23Home'))return;
+      v.classList.add('atlas24Workspace');
+      const hero=v.querySelector(':scope > .productHero, :scope > .hero');
+      if(hero){const key=v.dataset.view||'';hero.dataset.atlasSection=sectionNames[key]||'ATLAS';}
+    });
+  }
+  const oldRender=window.renderRoute;
+  if(typeof oldRender==='function')window.renderRoute=function(){const out=oldRender.apply(this,arguments);editorialize24();return out};
+  document.addEventListener('DOMContentLoaded',editorialize24);
+  setTimeout(editorialize24,0);
+})();

@@ -1,18 +1,28 @@
-# ATLAS 27.0 — CLEAN-SLATE FRONTEND
+ATLAS 26.0 — WORKSPACE WORLDS
 
-ATLAS 27.0 removes the legacy browser application from the rendered product. The existing Python data/collector backend is retained, but `/app/index.html` now boots a new frontend written from a blank shell in `atlas27.js` + `atlas27.css`.
+Purpose-built redesign of internal workspaces while preserving the ATLAS 23 homepage and data engine.
 
-## Workspaces
-- Home — editorial ATLAS landing page
-- Game Center — schedule rail + matchup stage
-- League — conference/division landscape
-- Teams — team-colored command center + roster architecture
-- Players — search-first scouting index
-- Intelligence — game room + field + captured play tape
-- Front Office — personnel-board / position-room interface
-- Data — operations pipeline
+# GRIDIRON ATLAS 19.0 — UNIFIED FOOTBALL OS
 
-No legacy `app.js`, `styles.css`, `system26.js`, or `system26.css` is loaded by the new index. They have been removed from this package.
+ATLAS 19.0 consolidates the 18.x roadmap into one release: Team Command 2.0 with league-relative context, richer Player DNA profiles, a persistent unified game workspace, personalized My Atlas briefing, connected drill-down navigation, responsive polish, and synchronized build identity. Existing verified-feed/data-integrity rules remain in force; unavailable metrics remain unavailable rather than fabricated.
 
-## Render
-`render.yaml` is included. Set `DATABASE_URL` in Render for persistent Postgres. Start command: `python server.py`.
+ATLAS 18.1 — INTERACTIVE FOOTBALL
+
+ATLAS 17.6 — GAME STORY CORE
+
+Visual game-story and league-density upgrade.
+
+ATLAS 17.5 — SPECTRUM CORE
+
+Visual analytics release: team signal rings, league differential map, player composition donut, 32-team GM personnel heatmap, expanded NFL logo identity, and clarified Atlas Performance Index baseline.
+
+# ATLAS 17.4 — VISUAL CORE
+
+Complete Render-ready build.
+
+Focus: denser information hierarchy, readable typography, larger visual identity, compact navigation/tabs, multicolor signal language, and persistent background source diagnostics.
+
+Data integrity policy remains unchanged: unsupported metrics are never fabricated; NGS/AWS references are not represented as raw tracking feeds.
+
+## ATLAS 23.0 — NEW WEBSITE
+This release replaces the legacy rail-first home experience with a new horizontal product shell and a structurally new editorial front page while preserving the ATLAS data engine and workspaces.

@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="27.0"
-BUILD_NAME="ATLAS CLEAN-SLATE FRONTEND"
+VERSION="19.0"
+BUILD_NAME="ATLAS UNIFIED FOOTBALL OS"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1322,7 +1322,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/week":
             season=(q.get("season") or [2026])[0]; week=(q.get("week") or [None])[0]; st=(q.get("type") or [2])[0]
             try:return self.sendj(week_schedule(season, int(week) if week not in (None,"") else None, st))
-            except Exception as e:return self.sendj({"ok":False,"games":[],"error":str(e)},502)
+            except Exception as e:return self.sendj({"ok":False,"games":[],"error":str(e)},200)
         if u.path=="/api/game":
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
@@ -1332,7 +1332,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
         if u.path=="/api/archive-coverage":
             try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
-            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},200)
         if u.path=="/api/recent":
             try: limit=int((q.get("limit") or [8])[0])
             except Exception: limit=8
@@ -1348,20 +1348,20 @@ class H(SimpleHTTPRequestHandler):
             team=(q.get("team") or [None])[0]
             if team:
                 try:return self.sendj(team_roster(team))
-                except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
+                except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},200)
             rows=player_index();return self.sendj({"players":rows,"count":len(rows),"teams":len({p.get("team") for p in rows if p.get("team")}),"source":"LEAGUE_ROSTERS+ATLAS_ARCHIVE"})
         if u.path=="/api/roster":
             team=(q.get("team") or [""])[0]
             try:return self.sendj(team_roster(team))
-            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
+            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},200)
         if u.path=="/api/player":
             aid=(q.get("id") or [""])[0]
             try:return self.sendj(player_profile(aid))
-            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},200)
         if u.path=="/api/teamstats":
             team=(q.get("team") or [""])[0]
             try:return self.sendj(_team_season_stats(team))
-            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
+            except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},200)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})

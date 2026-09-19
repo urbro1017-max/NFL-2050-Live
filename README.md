@@ -1,21 +1,17 @@
-# GRIDIRON ATLAS 19.0 — UNIFIED FOOTBALL OS
+# ATLAS 20.0 — Football Intelligence
 
-ATLAS 19.0 consolidates the 18.x roadmap into one release: Team Command 2.0 with league-relative context, richer Player DNA profiles, a persistent unified game workspace, personalized My Atlas briefing, connected drill-down navigation, responsive polish, and synchronized build identity. Existing verified-feed/data-integrity rules remain in force; unavailable metrics remain unavailable rather than fabricated.
+A complete visual redesign of ATLAS built on the 19.0 functional foundation.
 
-ATLAS 18.1 — INTERACTIVE FOOTBALL
+## Design reset
+- New geometric ATLAS compass/field-mark identity; no circular letter logo.
+- Quiet charcoal/off-white visual system with restrained acid-lime ATLAS accent.
+- Narrow architectural navigation rail and responsive bottom navigation on small screens.
+- Editorial workspace heroes, cleaner typography, fewer borders, no neon glow language.
+- Team colors are reserved for team identity and meaningful data context.
+- Cards, tables, command palette, Team Command, Player DNA, Game Workspace and My Atlas all share one coherent system.
 
-ATLAS 17.6 — GAME STORY CORE
+## Product integrity
+Existing routes, backend feeds, archives, game intelligence, Team/Player DNA, GM Lab, Data Health and 19.0 functionality remain in place. Unsupported data remains unavailable rather than fabricated.
 
-Visual game-story and league-density upgrade.
-
-ATLAS 17.5 — SPECTRUM CORE
-
-Visual analytics release: team signal rings, league differential map, player composition donut, 32-team GM personnel heatmap, expanded NFL logo identity, and clarified Atlas Performance Index baseline.
-
-# ATLAS 17.4 — VISUAL CORE
-
-Complete Render-ready build.
-
-Focus: denser information hierarchy, readable typography, larger visual identity, compact navigation/tabs, multicolor signal language, and persistent background source diagnostics.
-
-Data integrity policy remains unchanged: unsupported metrics are never fabricated; NGS/AWS references are not represented as raw tracking feeds.
+## Deploy
+Upload this repository to Render using the included `render.yaml`.

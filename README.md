@@ -1,6 +1,6 @@
-# ATLAS 30.0 — BLACKBOX
+# ATLAS 31.0 — BLACKBOX
 
-ATLAS 30 keeps the clean-slate frontend architecture from 27.0 and adds a cohesive product-wide visual system: shared navigation, spacing, typography, motion, borders, surface language, responsive behavior, and interaction states while preserving each workspace's distinct job.
+ATLAS 31 keeps the clean-slate frontend architecture from 27.0 and adds a cohesive product-wide visual system: shared navigation, spacing, typography, motion, borders, surface language, responsive behavior, and interaction states while preserving each workspace's distinct job.
 
 ## Workspaces
 - Home — editorial football intelligence landing page

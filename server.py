@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="27.0"
-BUILD_NAME="ATLAS CLEAN-SLATE FRONTEND"
+VERSION="31.0"
+BUILD_NAME="ATLAS BLACKBOX CONTROL SURFACE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -27,6 +27,10 @@ PROFILE_CACHE={}
 PROFILE_CACHE_LOCK=threading.Lock()
 PROFILE_CACHE_SECONDS=3600
 TEAM_IDS={"ARI":"22","ATL":"1","BAL":"33","BUF":"2","CAR":"29","CHI":"3","CIN":"4","CLE":"5","DAL":"6","DEN":"7","DET":"8","GB":"9","HOU":"34","IND":"11","JAX":"30","KC":"12","LV":"13","LAC":"24","LA":"14","MIA":"15","MIN":"16","NE":"17","NO":"18","NYG":"19","NYJ":"20","PHI":"21","PIT":"23","SF":"25","SEA":"26","TB":"27","TEN":"10","WAS":"28"}
+TEAM_ABBR_ALIASES={"LAR":"LA","WSH":"WAS"}
+def norm_team_abbr(ab):
+    ab=str(ab or "").upper().strip()
+    return TEAM_ABBR_ALIASES.get(ab,ab)
 
 
 def _load_verified_players():
@@ -806,7 +810,7 @@ def _standings_feed():
                     wins=_stat_value(stats,['wins']); losses=_stat_value(stats,['losses']); ties=_stat_value(stats,['ties'])
                     rec='—'
                     if wins is not None and losses is not None: rec=f"{wins}-{losses}"+(f"-{ties}" if str(ties) not in ('0','0.0','None') else '')
-                    rows.append({'abbr':tm.get('abbreviation'),'name':tm.get('displayName') or tm.get('name'),'logo':_team_logo(tm),'record':rec,'winPct':_stat_value(stats,['winPercent','winpct']),'pointsFor':_stat_value(stats,['pointsFor','pointsfor']),'pointsAgainst':_stat_value(stats,['pointsAgainst','pointsagainst']),'diff':_stat_value(stats,['differential','pointDifferential']),'streak':_stat_value(stats,['streak']),'rank':_stat_value(stats,['playoffSeed','rank'])})
+                    rows.append({'abbr':norm_team_abbr(tm.get('abbreviation')),'name':tm.get('displayName') or tm.get('name'),'logo':_team_logo(tm),'record':rec,'winPct':_stat_value(stats,['winPercent','winpct']),'pointsFor':_stat_value(stats,['pointsFor','pointsfor']),'pointsAgainst':_stat_value(stats,['pointsAgainst','pointsagainst']),'diff':_stat_value(stats,['differential','pointDifferential']),'streak':_stat_value(stats,['streak']),'rank':_stat_value(stats,['playoffSeed','rank'])})
             for v in x.values(): walk(v)
         elif isinstance(x,list):
             for v in x: walk(v)
@@ -831,7 +835,7 @@ def _leaders_feed():
                 for z in ls:
                     if not isinstance(z,dict):continue
                     a=z.get('athlete') or z.get('player') or {}; tm=z.get('team') or a.get('team') or {}
-                    vals.append({'name':athlete_name(z),'team':tm.get('abbreviation') if isinstance(tm,dict) else tm,'value':z.get('displayValue',z.get('value'))})
+                    vals.append({'name':athlete_name(z),'team':norm_team_abbr(tm.get('abbreviation')) if isinstance(tm,dict) else tm,'value':z.get('displayValue',z.get('value'))})
                 groups.append({'name':name,'leaders':vals})
             for v in x.values():walk(v)
         elif isinstance(x,list):
@@ -908,7 +912,7 @@ def _league_structure(standings, leaders, profiles):
     for group in leaders or []:
         cat=group.get('name') or 'Leader'
         for x in group.get('leaders') or []:
-            ab=x.get('team')
+            ab=norm_team_abbr(x.get('team'))
             if ab in team_leaders and len(team_leaders[ab])<16:
                 team_leaders[ab].append({'category':cat,'name':x.get('name'),'value':x.get('value')})
     return {'alignment':NFL_ALIGNMENT,'conferences':conferences,'divisions':divisions,'power':power,'teamLeaders':team_leaders}

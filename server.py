@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="32.0"
-BUILD_NAME="ATLAS ANALYTICS ENGINE"
+VERSION="33.0"
+BUILD_NAME="ATLAS LIVE BRAIN"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1256,6 +1256,66 @@ def archive_intelligence():
             "games":games,"players":plist,"teams":tlist,"source":"ATLAS_FINAL_ARCHIVE_READ_ONLY","updated":int(time.time())}
 
 
+
+def archive_trends(team=None):
+    """Chronological, archive-only club trend rows. No projected values."""
+    team=norm_team_abbr(team) if team else None
+    rows=[]
+    for meta in STORE.games():
+        g=STORE.game(str(meta.get("id"))) or {}
+        if not _is_final_game(g): continue
+        ts=g.get("teams") or []
+        if len(ts)!=2: continue
+        for t in ts:
+            ab=norm_team_abbr(t.get("abbr"))
+            if team and ab!=team: continue
+            opp=next((z for z in ts if z is not t),{})
+            try: pf=int(t.get("score") or 0); pa=int(opp.get("score") or 0)
+            except Exception: continue
+            rows.append({"game_id":str(g.get("id") or meta.get("id")),"date":g.get("date"),"team":ab,"opponent":norm_team_abbr(opp.get("abbr")),"points_for":pf,"points_against":pa,"margin":pf-pa,"result":"W" if pf>pa else "L" if pf<pa else "T","plays":len(g.get("plays") or []),"drives":len(g.get("drives") or [])})
+    rows.sort(key=lambda x:str(x.get("date") or ""))
+    # Rolling values only use games actually stored in Atlas.
+    if team:
+        for i,r in enumerate(rows):
+            w=rows[max(0,i-2):i+1]
+            r["rolling3_pf"]=round(sum(x["points_for"] for x in w)/len(w),1)
+            r["rolling3_pa"]=round(sum(x["points_against"] for x in w)/len(w),1)
+    return {"ok":True,"team":team,"games":rows,"count":len(rows),"source":"ATLAS_FINAL_ARCHIVE","updated":int(time.time())}
+
+def atlas_insights(team=None):
+    """Deterministic observations backed only by captured final-game rows."""
+    d=archive_trends(team); rows=d["games"]; out=[]
+    if not rows:return {"ok":True,"team":d.get("team"),"insights":[],"source":d["source"],"updated":d["updated"]}
+    if team:
+        last=rows[-1]; out.append({"title":"Latest stored result","text":f"{team} scored {last['points_for']} and allowed {last['points_against']} vs {last['opponent']}.","game_id":last['game_id']})
+        hi=max(rows,key=lambda x:x['points_for']); out.append({"title":"Stored scoring high","text":f"{hi['points_for']} points vs {hi['opponent']} is {team}'s highest scoring output in the {len(rows)} archived game sample.","game_id":hi['game_id']})
+        if len(rows)>=3:
+            w=rows[-3:]; out.append({"title":"Three-game scoring window","text":f"Across the latest 3 stored games, {team} averaged {sum(x['points_for'] for x in w)/3:.1f} points and allowed {sum(x['points_against'] for x in w)/3:.1f}.","game_id":last['game_id']})
+            margins=[x['margin'] for x in w]
+            if margins[0]<margins[1]<margins[2]: out.append({"title":"Margin trend","text":"Scoring margin improved in each of the latest three stored games.","game_id":last['game_id']})
+            elif margins[0]>margins[1]>margins[2]: out.append({"title":"Margin trend","text":"Scoring margin declined in each of the latest three stored games.","game_id":last['game_id']})
+    else:
+        out.append({"title":"Archive sample","text":f"ATLAS currently holds {len(rows)} team-game rows from completed games.","game_id":rows[-1]['game_id']})
+    return {"ok":True,"team":d.get("team"),"insights":out,"source":"ATLAS_DERIVED_FROM_FINAL_ARCHIVE","updated":int(time.time())}
+
+def atlas_search(q):
+    q=str(q or '').strip().lower()
+    if len(q)<2:return {"ok":True,"query":q,"results":[]}
+    out=[]
+    for t in team_index():
+        text=f"{t.get('name','')} {t.get('abbr','')}".lower()
+        if q in text: out.append({"type":"team","id":norm_team_abbr(t.get('abbr')),"label":t.get('name'),"meta":norm_team_abbr(t.get('abbr'))})
+    try:
+        for x in player_index():
+            text=f"{x.get('name','')} {x.get('team','')} {x.get('position','')}".lower()
+            if q in text: out.append({"type":"player","id":x.get('id'),"label":x.get('name'),"meta":f"{x.get('team','')} · {x.get('position','')}"})
+            if len(out)>=18: break
+    except Exception: pass
+    for g in archive_recent(24):
+        names=' '.join(str(t.get('name') or t.get('abbr') or '') for t in g.get('teams') or []).lower()
+        if q in names or q in str(g.get('id')): out.append({"type":"game","id":g.get('id'),"label":" @ ".join((t.get('abbr') or '?') for t in g.get('teams') or []),"meta":g.get('status')})
+    return {"ok":True,"query":q,"results":out[:18]}
+
 SOURCE_HEALTH_CACHE={"ts":0,"value":None}
 SOURCE_HEALTH_LOCK=threading.Lock()
 
@@ -1278,7 +1338,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'app.js').exists() and (ROOT/'styles.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas33.js').exists() and (ROOT/'atlas33.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1334,6 +1394,12 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
+        if u.path=="/api/trends":
+            return self.sendj(archive_trends((q.get("team") or [None])[0]))
+        if u.path=="/api/insights":
+            return self.sendj(atlas_insights((q.get("team") or [None])[0]))
+        if u.path=="/api/search":
+            return self.sendj(atlas_search((q.get("q") or [""])[0]))
         if u.path=="/api/archive-coverage":
             try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)

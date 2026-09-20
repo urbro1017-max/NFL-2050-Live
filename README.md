@@ -1,6 +1,12 @@
-# ATLAS 44.0 — NEON FIELD
-Render-ready football intelligence build.
+# ATLAS 45.0 — SIGNAL ENGINE
+Render-ready ATLAS build.
 
-Main navigation is intentionally reduced to Home, Games, Teams, Game Graphs, and Weekly Recap. Players live inside team/search flows rather than occupying a top-level destination. Team stats, roster and graphs remain together in Teams. Game Graphs are scoped to the selected matchup. Weekly Recap derives stories from verified final scores/game state and ATLAS forecast context only.
+## What changed
+- Adds transparent game-scoped ATLAS Impact rankings for best and lowest measured box-score impact.
+- Adds richer Game Graphs presentation and animated drive-pulse visualization.
+- Keeps the simplified Home / Games / Teams / Game Graphs / Weekly Recap information architecture.
+- Keeps archive recovery and truth-preserving missing-data behavior from prior builds.
+- Refines background, glass surfaces, neon accents, hierarchy, responsive layout and motion.
+- No external font request; system font stack remains fast.
 
-Includes archive recovery from 42/43 and the public ESPN-backed data pipeline.
+ATLAS Impact is a derived visualization, not an official NFL grade or film evaluation. It only uses player statistics returned in the selected game feed.

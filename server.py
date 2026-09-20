@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="37.0"
-BUILD_NAME="ATLAS FORECAST ENGINE"
+VERSION="39.0"
+BUILD_NAME="ATLAS GAME DAY FINAL"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1468,6 +1468,10 @@ def legacy_live():
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
     def end_headers(self):
+        p=urlparse(self.path).path
+        if not p.startswith("/api/"):
+            if p.endswith((".js",".css",".webmanifest")): self.send_header("Cache-Control","public, max-age=3600, stale-while-revalidate=86400")
+            elif p in ("/","/index.html"): self.send_header("Cache-Control","no-cache")
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Referrer-Policy","no-referrer")
         self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")

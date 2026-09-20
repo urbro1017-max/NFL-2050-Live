@@ -1,6 +1,3 @@
-# ATLAS 48.0 — NEON INTELLIGENCE
-Render-ready NFL intelligence build.
+# ATLAS 49.0 — AI COMMAND
 
-Adds ATLAS Game Story, momentum events, explainable Impact cards, interactive archive/live replay scrubber, weekly ATLAS performance awards, team identity/DNA trends, additional neon animation, while preserving Field Vision, smooth in-place live refresh, archive recovery and the five-destination navigation.
-
-ATLAS ratings and awards are transparent model outputs from measurable feed/archive data, not official NFL grades or honors. Missing data remains missing.
+Clean UI pass plus one focused ATLAS AI hub for team power rankings, end-of-season projected wins, best projected production by QB/RB/WR/TE, and the ATLAS MVP signal. Existing Games, Teams, Game Graphs, Weekly Recap, Field Vision, Replay, Game Story, archive recovery and smooth in-place refresh are preserved. Model outputs are ATLAS-derived and missing data is not fabricated.

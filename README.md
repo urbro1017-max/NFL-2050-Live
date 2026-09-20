@@ -1,3 +1,10 @@
-ATLAS 40.0 LIVE DESK
+# ATLAS 42.0 — Archive Recovery
 
-Game-day build with an auto-updating Live Summary workspace, time-slot storyboards, top stories, smart polling, forecasts, archives, and the existing ATLAS analytics system.
+Render-ready ATLAS build focused on automatic final-game archiving, missed-game recovery, faster UI rendering, and clearer navigation.
+
+Archive changes:
+- final-state provider candidate preference
+- weekly scoreboard final-state authority safety net
+- automatic final save even when a detailed ESPN subfeed carries a stale header
+- larger/faster missed-final backfill batches
+- corrected static diagnostics for current assets

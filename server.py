@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="40.0"
-BUILD_NAME="ATLAS LIVE DESK"
+VERSION="42.0"
+BUILD_NAME="ATLAS ARCHIVE RECOVERY"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -47,8 +47,8 @@ def baseline_players_for(teams):
 LAST={"scoreboard":None,"collector":None,"error":None,"endpoint":None,"fallback":None,"backfill":None,"backfill_stats":{},"backfill_errors":[]}
 BACKFILL_LOCK=threading.Lock()
 BACKFILL_LAST_SCAN=0
-BACKFILL_SCAN_SECONDS=max(120,int(os.environ.get("BACKFILL_SCAN_SECONDS","300")))
-BACKFILL_BATCH=max(1,min(4,int(os.environ.get("BACKFILL_BATCH","2"))))
+BACKFILL_SCAN_SECONDS=max(60,int(os.environ.get("BACKFILL_SCAN_SECONDS","90")))
+BACKFILL_BATCH=max(1,min(16,int(os.environ.get("BACKFILL_BATCH","12"))))
 ARCHIVE_COVERAGE_CACHE={"ts":0,"value":None}
 ARCHIVE_COVERAGE_CACHE_SECONDS=120
 
@@ -337,9 +337,19 @@ def game(gid,save=True,prefer_archive=True):
     if not candidates:
         archived=STORE.game(gid)
         return archived or {"id":gid,"available":False,"status":"Unavailable","teams":[],"team_stats":{},"players":[],"plays":[],"drives":[],"linescores":{},"source":"ARCHIVE_OR_UNAVAILABLE"}
-    # Choose by actual game progress (period + game clock), not by which HTTP request returned last.
-    candidates.sort(key=lambda x:x[2],reverse=True)
-    chosen_name,d,chosen_progress=candidates[0]
+    # Final-state authority comes first. Some ESPN subfeeds can finish with the
+    # newest play timestamp while still carrying a stale pre-final header. Prefer
+    # any provider candidate that explicitly reports completed/post, then use
+    # football progress to break ties. This prevents missed final archives.
+    def candidate_final(item):
+        _,payload,_=item
+        comp=((payload.get("header") or {}).get("competitions") or [{}])[0]
+        typ=((comp.get("status") or {}).get("type") or {})
+        return bool(typ.get("completed") or str(typ.get("state") or "").lower()=="post")
+    finals=[x for x in candidates if candidate_final(x)]
+    pool=finals or candidates
+    pool.sort(key=lambda x:x[2],reverse=True)
+    chosen_name,d,chosen_progress=pool[0]
     provider_meta=[{"name":n,"progress":list(pr)} for n,_,pr in candidates]
     # Some specialized responses omit sections. Fill only missing sections from the
     # freshest candidate that contains them; never overwrite a newer live section.
@@ -474,6 +484,19 @@ def collect_once():
             # bypass archive only when the schedule says a final still needs capture
             force_final=bool(g.get("completed") or state=="post")
             result=game(g["id"], True, prefer_archive=not force_final)
+            # The weekly scoreboard is authoritative for lifecycle state. If it
+            # says FINAL but a detailed subfeed still carries a stale header,
+            # preserve the detailed package and stamp the verified final state
+            # before saving. This is the archive safety net that avoids requiring
+            # a user to open every finished game.
+            if force_final and result and result.get("available",True) and len(result.get("teams") or [])==2:
+                result=dict(result)
+                result["completed"]=True
+                result["state"]="post"
+                result["status"]=g.get("status") or result.get("status") or "Final"
+                result["archive_verified_by"]="ESPN_SITE_WEEK"
+                STORE.save(result)
+                with LIVE_CACHE_LOCK: LIVE_CACHE[str(g["id"])]={"ts":time.time(),"value":result}
             if result and result.get("available",True): stats["succeeded"]+=1
             else:
                 stats["failed"]+=1; errors.append(f"{g.get('id')}: unavailable")
@@ -1433,7 +1456,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas33.js').exists() and (ROOT/'atlas33.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas42.js').exists() and (ROOT/'atlas42.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks

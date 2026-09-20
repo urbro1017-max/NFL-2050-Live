@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="52.0"
-BUILD_NAME="ATLAS ARCHIVE INTELLIGENCE"
+VERSION="53.0"
+BUILD_NAME="ATLAS DATA INTEGRITY"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -94,6 +94,22 @@ class Store:
     def kind(self):return "POSTGRES" if self.pg else "SQLITE"
     def save(self,g):
         if not g.get("available"):return
+        # Never let a later sparse provider response destroy a richer archived final.
+        # Final-game payloads are the canonical ATLAS database record used by projections.
+        try:
+            old=self.game(str(g.get("id"))) if g.get("id") else None
+        except Exception:
+            old=None
+        def _final(x):
+            return bool(x and (x.get("completed") or str(x.get("state") or "").lower()=="post" or str(x.get("status") or "").lower().startswith("final")))
+        if old and _final(old) and _final(g):
+            g=dict(g)
+            for field in ("players","plays","drives","scoring_plays"):
+                if len(old.get(field) or []) > len(g.get(field) or []): g[field]=old.get(field)
+            if len(old.get("team_stats") or {}) > len(g.get("team_stats") or {}): g["team_stats"]=old.get("team_stats")
+            if len(old.get("linescores") or {}) > len(g.get("linescores") or {}): g["linescores"]=old.get("linescores")
+            if len(old.get("roster_players") or []) > len(g.get("roster_players") or []): g["roster_players"]=old.get("roster_players")
+            g["archive_preserved_rich_fields"]=True
         now=int(time.time()); payload=json.dumps(g)
         c=self.conn()
         if self.pg:c.execute("INSERT INTO games VALUES(%s,%s::jsonb,%s,%s) ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,updated=excluded.updated",(g["id"],payload,g.get("status",""),now))
@@ -1256,9 +1272,15 @@ def archive_intelligence():
                     if a>b:x["wins"]+=1
                     elif a<b:x["losses"]+=1
                 except: pass
+        roster_meta={str(r.get("id")):r for r in (g.get("roster_players") or []) if r.get("id") is not None}
         for pr in g.get("players") or []:
-            key=str(pr.get("id") or (pr.get("name"),pr.get("team")))
-            x=players.setdefault(key,{"id":pr.get("id"),"name":pr.get("name"),"team":norm_team_abbr(pr.get("team")),"position":pr.get("position"),"games":set(),"categories":{}})
+            rid=str(pr.get("id")) if pr.get("id") is not None else None
+            rm=roster_meta.get(rid) or {}
+            pteam=norm_team_abbr(pr.get("team") or rm.get("team"))
+            ppos=pr.get("position") or rm.get("position")
+            pname=pr.get("name") or rm.get("name")
+            key=str(rid or (pname,pteam))
+            x=players.setdefault(key,{"id":pr.get("id") or rm.get("id"),"name":pname,"team":pteam,"position":ppos,"games":set(),"categories":{}})
             if not x.get("position") and pr.get("position"): x["position"]=pr.get("position")
             if not x.get("team") and pr.get("team"): x["team"]=norm_team_abbr(pr.get("team"))
             x["games"].add(row["id"]); cat=str(pr.get("category") or "Other")
@@ -1337,7 +1359,7 @@ def _record_parts(record):
 def _clamp(v,lo,hi): return max(lo,min(hi,v))
 
 def atlas_projection_engine():
-    """ATLAS 52 projection engine: archive-first, fault-isolated, and explainable."""
+    """ATLAS 53 projection engine: database-backed, archive-first, fault-isolated, and explainable."""
     try: lg=league_hq() or {}
     except Exception: lg={}
     standings=lg.get('standings') or []; power=lg.get('power') or []
@@ -1405,7 +1427,7 @@ def atlas_projection_engine():
         mvp.append({**x,'mvp_score':round(score,1),'team_strength':ts})
     mvp.sort(key=lambda x:-x['mvp_score']); mvp=mvp[:20]
     positions={p:len([x for x in fantasy if x.get('position')==p]) for p in ('QB','RB','WR','TE')}
-    diag={'archived_finals':int((archive.get('sample') or {}).get('final_games') or 0),'archived_players':len(arch_players),'player_game_lines':player_lines,'qualified_players':len(fantasy),'position_counts':positions,'archive_plays':int((archive.get('sample') or {}).get('plays') or 0),'archive_drives':int((archive.get('sample') or {}).get('drives') or 0)}
+    diag={'database':STORE.kind,'persisted_games':len(STORE.games()),'archived_finals':int((archive.get('sample') or {}).get('final_games') or 0),'archived_players':len(arch_players),'player_game_lines':player_lines,'qualified_players':len(fantasy),'position_counts':positions,'archive_plays':int((archive.get('sample') or {}).get('plays') or 0),'archive_drives':int((archive.get('sample') or {}).get('drives') or 0)}
     return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'diagnostics':diag,'formula':{'team_strength':'55% record + 25% bounded point differential/game + 20% recent archived margin','season_projection':'current wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like production calculated directly from aggregated final-game archive box scores','mvp':'70% normalized archive production + 30% projected team strength'},'source':'ESPN_STANDINGS+ATLAS_FINAL_ARCHIVE_DERIVED_MODEL','updated':int(time.time())}
 
 def atlas_search(q):
@@ -1448,7 +1470,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas52.js').exists() and (ROOT/'atlas52.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas53.js').exists() and (ROOT/'atlas53.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks

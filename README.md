@@ -1,12 +1,10 @@
-# ATLAS 45.0 — SIGNAL ENGINE
-Render-ready ATLAS build.
+# ATLAS 46.0 — LIVE SURFACE
 
-## What changed
-- Adds transparent game-scoped ATLAS Impact rankings for best and lowest measured box-score impact.
-- Adds richer Game Graphs presentation and animated drive-pulse visualization.
-- Keeps the simplified Home / Games / Teams / Game Graphs / Weekly Recap information architecture.
-- Keeps archive recovery and truth-preserving missing-data behavior from prior builds.
-- Refines background, glass surfaces, neon accents, hierarchy, responsive layout and motion.
-- No external font request; system font stack remains fast.
+Hotfix release focused on stable live rendering.
 
-ATLAS Impact is a derived visualization, not an official NFL grade or film evaluation. It only uses player statistics returned in the selected game feed.
+- Fixes Game Graphs switching itself into the older/plain Game Intelligence view after a live refresh.
+- Automatic polling no longer re-renders the entire application shell.
+- Live scoreboard cards are patched in place.
+- Game Graph scores, ATLAS Impact board, and graph wall update in place while preserving the selected game and scroll position.
+- Manual refresh remains available.
+- Keeps ATLAS 45 Signal Engine, archive recovery, weekly recap, team experience, and performance rankings.

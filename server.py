@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="50.0"
-BUILD_NAME="ATLAS VISUAL QA"
+VERSION="52.0"
+BUILD_NAME="ATLAS ARCHIVE INTELLIGENCE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1258,7 +1258,9 @@ def archive_intelligence():
                 except: pass
         for pr in g.get("players") or []:
             key=str(pr.get("id") or (pr.get("name"),pr.get("team")))
-            x=players.setdefault(key,{"id":pr.get("id"),"name":pr.get("name"),"team":pr.get("team"),"position":pr.get("position"),"games":set(),"categories":{}})
+            x=players.setdefault(key,{"id":pr.get("id"),"name":pr.get("name"),"team":norm_team_abbr(pr.get("team")),"position":pr.get("position"),"games":set(),"categories":{}})
+            if not x.get("position") and pr.get("position"): x["position"]=pr.get("position")
+            if not x.get("team") and pr.get("team"): x["team"]=norm_team_abbr(pr.get("team"))
             x["games"].add(row["id"]); cat=str(pr.get("category") or "Other")
             dst=x["categories"].setdefault(cat,{})
             for k,v in (pr.get("stats") or {}).items():
@@ -1335,86 +1337,76 @@ def _record_parts(record):
 def _clamp(v,lo,hi): return max(lo,min(hi,v))
 
 def atlas_projection_engine():
-    """Transparent schedule-neutral ATLAS projections. Forecasts are model outputs, never provider facts."""
-    lg=league_hq(); standings=lg.get('standings') or []; power=lg.get('power') or []
-    power_by={x.get('abbr'):x for x in power}; archive=archive_intelligence(); arch_by={x.get('abbr'):x for x in archive.get('teams') or []}
+    """ATLAS 52 projection engine: archive-first, fault-isolated, and explainable."""
+    try: lg=league_hq() or {}
+    except Exception: lg={}
+    standings=lg.get('standings') or []; power=lg.get('power') or []
+    archive=archive_intelligence() or {}; arch_teams=archive.get('teams') or []; arch_players=archive.get('players') or []
+    arch_by={norm_team_abbr(x.get('abbr')):x for x in arch_teams}
+    power_by={norm_team_abbr(x.get('abbr')):x for x in power}
+    standing_by={norm_team_abbr(x.get('abbr')):x for x in standings if x.get('abbr')}
     teams=[]
-    for r in standings:
-        ab=norm_team_abbr(r.get('abbr')); w,l,t=_record_parts(r.get('record')); gp=w+l+t
-        pct=(w+.5*t)/gp if gp else .5
-        diff=_num(r.get('diff')); dpg=diff/gp if gp else 0
+    # Always model all 32 clubs. Provider standings enrich the archive; they are not a single point of failure.
+    for base in team_index():
+        ab=norm_team_abbr(base.get('abbr')); r=standing_by.get(ab) or {}; ar=arch_by.get(ab) or {}
+        if r:
+            w,l,t=_record_parts(r.get('record')); diff=_num(r.get('diff')); record=r.get('record') or f'{int(w)}-{int(l)}'
+        else:
+            w=float(ar.get('wins') or 0); l=float(ar.get('losses') or 0); t=0.0
+            diff=float(ar.get('points') or 0)-float(ar.get('points_allowed') or 0); record=f'{int(w)}-{int(l)}'
+        gp=w+l+t
+        pct=(w+.5*t)/gp if gp else .5; dpg=diff/gp if gp else float(ar.get('diff_per_game') or 0)
         recent=archive_trends(ab).get('games') or []
         recent_margin=sum(x.get('margin',0) for x in recent[-3:])/len(recent[-3:]) if recent else dpg
-        # 55% results, 25% scoring margin, 20% recent stored form. Each modifier is bounded.
-        record_component=pct
-        margin_component=.5+_clamp(dpg,-14,14)/28*.5
-        form_component=.5+_clamp(recent_margin,-14,14)/28*.5
-        expected=_clamp(.55*record_component+.25*margin_component+.20*form_component,.15,.85)
-        remaining=max(0,17-gp)
-        projected_wins=w+.5*t+remaining*expected
-        idx=(power_by.get(ab) or {}).get('atlasIndex')
-        teams.append({'abbr':ab,'name':r.get('name'),'logo':r.get('logo'),'record':r.get('record'),'games_played':gp,'wins':w,'losses':l,'ties':t,'point_diff':diff,'diff_per_game':round(dpg,2),'recent_margin':round(recent_margin,2),'atlas_index':idx,'strength':round(expected*100,1),'projected_wins':round(projected_wins,1),'projected_losses':round(17-projected_wins,1),'remaining':remaining})
+        expected=_clamp(.55*pct+.25*(.5+_clamp(dpg,-14,14)/56)+.20*(.5+_clamp(recent_margin,-14,14)/56),.15,.85)
+        remaining=max(0,17-gp); projected=w+.5*t+remaining*expected
+        teams.append({'abbr':ab,'name':r.get('name') or base.get('name'),'logo':r.get('logo') or base.get('logo'),'record':record,'games_played':gp,'wins':w,'losses':l,'ties':t,'point_diff':round(diff,1),'diff_per_game':round(dpg,2),'recent_margin':round(recent_margin,2),'atlas_index':(power_by.get(ab) or {}).get('atlasIndex'),'strength':round(expected*100,1),'expected_win_rate':round(expected*100,1),'projected_wins':round(projected,1),'projected_losses':round(17-projected,1),'remaining':remaining,'record_source':'standings' if r else 'archive'})
     teams.sort(key=lambda x:(-x['strength'],-x['projected_wins'],x['abbr']))
-    for i,x in enumerate(teams,1):x['projection_rank']=i
+    for i,x in enumerate(teams,1): x['projection_rank']=i
     strength={x['abbr']:x for x in teams}
-    wk=week_schedule(2026,None,2); games=[]
-    for g in wk.get('games') or []:
-        if g.get('state')!='pre':continue
-        ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {}); home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})
-        aa=norm_team_abbr(away.get('abbr')); ha=norm_team_abbr(home.get('abbr')); av=strength.get(aa); hv=strength.get(ha)
-        if not av or not hv:continue
-        # Small home-field adjustment; probability remains bounded to communicate uncertainty.
-        home_prob=_clamp(50+(hv['strength']-av['strength'])*0.72+2.0,20,80); away_prob=100-home_prob
-        pick=ha if home_prob>=away_prob else aa; conf=abs(home_prob-50)*2
-        games.append({'id':g.get('id'),'date':g.get('date'),'away':aa,'home':ha,'away_prob':round(away_prob,1),'home_prob':round(home_prob,1),'pick':pick,'confidence':round(conf,1),'status':g.get('status')})
-    fantasy=[]
-    # PPR-like archive projection: latest-3 weighted 60%, full stored sample 40%.
-    per={}
-    def statval(stats,*needles):
-        for k,v in (stats or {}).items():
-            ku=str(k).upper().replace(' ','')
-            if any(n in ku for n in needles):
-                try:return float(str(v).replace(',','').split('/')[0])
-                except:pass
+    games=[]
+    try:
+        wk=week_schedule(2026,None,2)
+        for g in wk.get('games') or []:
+            if g.get('state')!='pre': continue
+            ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {}); home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})
+            aa=norm_team_abbr(away.get('abbr')); ha=norm_team_abbr(home.get('abbr')); av=strength.get(aa); hv=strength.get(ha)
+            if not av or not hv: continue
+            hp=_clamp(50+(hv['strength']-av['strength'])*.72+2,20,80); ap=100-hp
+            games.append({'id':g.get('id'),'date':g.get('date'),'away':aa,'home':ha,'away_prob':round(ap,1),'home_prob':round(hp,1),'pick':ha if hp>=ap else aa,'confidence':round(abs(hp-50)*2,1),'status':g.get('status')})
+    except Exception: pass
+
+    def nval(v):
+        try:return float(str(v).replace(',','').replace('%','').strip().split('/')[0])
+        except:return 0.0
+    def pickstat(st, aliases):
+        norm=lambda z:re.sub(r'[^A-Z0-9]','',str(z).upper())
+        amap={norm(k):v for k,v in (st or {}).items()}
+        for a in aliases:
+            if norm(a) in amap:return nval(amap[norm(a)])
         return 0.0
-    def fp_for(pr):
-        cats=pr.get('categories') or {}; total=0
-        for cname,st in cats.items():
-            cu=str(cname).upper()
-            if 'PASS' in cu:
-                total+=statval(st,'YDS','YARDS')/25 + statval(st,'TD')*4 - statval(st,'INT')*2
-            elif 'RUSH' in cu:
-                total+=statval(st,'YDS','YARDS')/10 + statval(st,'TD')*6
-            elif 'RECEIV' in cu:
-                total+=statval(st,'REC') + statval(st,'YDS','YARDS')/10 + statval(st,'TD')*6
-            elif 'FUMBL' in cu:
-                total-=statval(st,'LOST')*2
-        return total
-    # Build one player/category object per archived game.
-    for meta in STORE.games():
-        g=STORE.game(str(meta.get('id'))) or {}
-        if not _is_final_game(g):continue
-        game_players={}
-        for pr in g.get('players') or []:
-            key=str(pr.get('id') or (pr.get('name'),pr.get('team'))); x=game_players.setdefault(key,{'id':pr.get('id'),'name':pr.get('name'),'team':norm_team_abbr(pr.get('team')),'position':pr.get('position'),'categories':{}})
-            x['categories'][str(pr.get('category') or 'Other')]=pr.get('stats') or {}
-        for key,pr in game_players.items():
-            pts=fp_for(pr)
-            if pts==0:continue
-            x=per.setdefault(key,{'id':pr.get('id'),'name':pr.get('name'),'team':pr.get('team'),'position':pr.get('position'),'games':[]});x['games'].append(pts)
-    for x in per.values():
-        vals=x['games']; season=sum(vals)/len(vals); last=vals[-3:]; recent=sum(last)/len(last); proj=.4*season+.6*recent
-        fantasy.append({**{k:x.get(k) for k in ('id','name','team','position')},'games':len(vals),'season_fppg':round(season,1),'recent3_fppg':round(recent,1),'projected_fantasy':round(proj,1)})
-    fantasy.sort(key=lambda x:-x['projected_fantasy']); fantasy=fantasy[:60]
-    # MVP is an ATLAS model ladder, not an official award forecast. Production + projected team strength.
+    def catfind(cats, word):
+        for k,v in (cats or {}).items():
+            if word in str(k).upper():return v or {}
+        return {}
+    fantasy=[]; player_lines=0
+    for p in arch_players:
+        ng=max(1,int(p.get('games') or 0)); cats=p.get('categories') or {}; player_lines+=ng
+        pas=catfind(cats,'PASS'); rush=catfind(cats,'RUSH'); rec=catfind(cats,'RECEIV'); fum=catfind(cats,'FUMBL')
+        total=(pickstat(pas,['YDS','YARDS'])/25 + pickstat(pas,['TD','PASS TD'])*4 - pickstat(pas,['INT','INTERCEPTIONS'])*2 + pickstat(rush,['YDS','YARDS'])/10 + pickstat(rush,['TD','RUSH TD'])*6 + pickstat(rec,['REC','RECEPTIONS']) + pickstat(rec,['YDS','YARDS'])/10 + pickstat(rec,['TD','REC TD'])*6 - pickstat(fum,['LOST','FUM LOST'])*2)
+        if total==0: continue
+        fppg=total/ng
+        fantasy.append({'id':p.get('id'),'name':p.get('name'),'team':norm_team_abbr(p.get('team')),'position':str(p.get('position') or '').upper(),'games':ng,'season_fppg':round(fppg,1),'recent3_fppg':round(fppg,1),'projected_fantasy':round(fppg,1),'projection_basis':'ARCHIVE_AGGREGATE'})
+    fantasy.sort(key=lambda x:-x['projected_fantasy']); fantasy=fantasy[:120]
     maxfp=max([x['projected_fantasy'] for x in fantasy] or [1]); mvp=[]
     for x in fantasy:
-        if str(x.get('position') or '').upper() not in ('QB','RB','WR','TE'):continue
-        team_strength=(strength.get(x.get('team')) or {}).get('strength',50)
-        score=70*(x['projected_fantasy']/maxfp)+30*(team_strength/100)
-        mvp.append({**x,'mvp_score':round(score,1),'team_strength':team_strength})
-    mvp.sort(key=lambda x:-x['mvp_score']);mvp=mvp[:15]
-    return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'formula':{'team_strength':'55% current win rate + 25% bounded point-differential/game + 20% bounded recent ATLAS archive margin','season_projection':'current wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like stored-game production: 40% full ATLAS sample + 60% latest 3 stored games','mvp':'70% normalized ATLAS fantasy projection + 30% projected team strength; skill positions with stored production'},'source':'ESPN_STANDINGS+ATLAS_FINAL_ARCHIVE_DERIVED_MODEL','updated':int(time.time())}
+        if x.get('position') not in ('QB','RB','WR','TE'): continue
+        ts=(strength.get(x.get('team')) or {}).get('strength',50); score=70*(x['projected_fantasy']/maxfp)+30*(ts/100)
+        mvp.append({**x,'mvp_score':round(score,1),'team_strength':ts})
+    mvp.sort(key=lambda x:-x['mvp_score']); mvp=mvp[:20]
+    positions={p:len([x for x in fantasy if x.get('position')==p]) for p in ('QB','RB','WR','TE')}
+    diag={'archived_finals':int((archive.get('sample') or {}).get('final_games') or 0),'archived_players':len(arch_players),'player_game_lines':player_lines,'qualified_players':len(fantasy),'position_counts':positions,'archive_plays':int((archive.get('sample') or {}).get('plays') or 0),'archive_drives':int((archive.get('sample') or {}).get('drives') or 0)}
+    return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'diagnostics':diag,'formula':{'team_strength':'55% record + 25% bounded point differential/game + 20% recent archived margin','season_projection':'current wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like production calculated directly from aggregated final-game archive box scores','mvp':'70% normalized archive production + 30% projected team strength'},'source':'ESPN_STANDINGS+ATLAS_FINAL_ARCHIVE_DERIVED_MODEL','updated':int(time.time())}
 
 def atlas_search(q):
     q=str(q or '').strip().lower()
@@ -1456,7 +1448,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas43.js').exists() and (ROOT/'atlas43.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas52.js').exists() and (ROOT/'atlas52.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks

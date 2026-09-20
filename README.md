@@ -1,3 +1,3 @@
-# ATLAS 49.0 — AI COMMAND
+# ATLAS 50.0 — VISUAL QA
 
-Clean UI pass plus one focused ATLAS AI hub for team power rankings, end-of-season projected wins, best projected production by QB/RB/WR/TE, and the ATLAS MVP signal. Existing Games, Teams, Game Graphs, Weekly Recap, Field Vision, Replay, Game Story, archive recovery and smooth in-place refresh are preserved. Model outputs are ATLAS-derived and missing data is not fabricated.
+Focused cleanup release: readable/wrapping text, dark dropdown menus, cyan/violet/pink palette with the harsh lime removed, team-separated Game Graphs impact ratings, and deduplicated Momentum/Game Story/Replay surfaces. Live refresh updates the unique surfaces in place instead of stacking copies.

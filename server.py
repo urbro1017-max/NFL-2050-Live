@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="42.0"
-BUILD_NAME="ATLAS ARCHIVE RECOVERY"
+VERSION="44.0"
+BUILD_NAME="ATLAS NEON FIELD"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1456,7 +1456,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas42.js').exists() and (ROOT/'atlas42.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas43.js').exists() and (ROOT/'atlas43.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks

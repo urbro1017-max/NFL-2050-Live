@@ -1,10 +1,6 @@
-# ATLAS 42.0 — Archive Recovery
+# ATLAS 44.0 — NEON FIELD
+Render-ready football intelligence build.
 
-Render-ready ATLAS build focused on automatic final-game archiving, missed-game recovery, faster UI rendering, and clearer navigation.
+Main navigation is intentionally reduced to Home, Games, Teams, Game Graphs, and Weekly Recap. Players live inside team/search flows rather than occupying a top-level destination. Team stats, roster and graphs remain together in Teams. Game Graphs are scoped to the selected matchup. Weekly Recap derives stories from verified final scores/game state and ATLAS forecast context only.
 
-Archive changes:
-- final-state provider candidate preference
-- weekly scoreboard final-state authority safety net
-- automatic final save even when a detailed ESPN subfeed carries a stale header
-- larger/faster missed-final backfill batches
-- corrected static diagnostics for current assets
+Includes archive recovery from 42/43 and the public ESPN-backed data pipeline.

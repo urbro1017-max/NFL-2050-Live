@@ -1,3 +1,6 @@
-# ATLAS 47.0 — FIELD VISION
+# ATLAS 48.0 — NEON INTELLIGENCE
+Render-ready NFL intelligence build.
 
-Render-ready ATLAS build. Game Graphs adds a virtual field with a feed-grounded ball-position marker and a recent-play side rail. Smart polling patches these surfaces in place without rebuilding the page. Ball position is plotted only when the provider returns a clear team + yard-line spot.
+Adds ATLAS Game Story, momentum events, explainable Impact cards, interactive archive/live replay scrubber, weekly ATLAS performance awards, team identity/DNA trends, additional neon animation, while preserving Field Vision, smooth in-place live refresh, archive recovery and the five-destination navigation.
+
+ATLAS ratings and awards are transparent model outputs from measurable feed/archive data, not official NFL grades or honors. Missing data remains missing.

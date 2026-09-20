@@ -1,10 +1,3 @@
-# ATLAS 46.0 — LIVE SURFACE
+# ATLAS 47.0 — FIELD VISION
 
-Hotfix release focused on stable live rendering.
-
-- Fixes Game Graphs switching itself into the older/plain Game Intelligence view after a live refresh.
-- Automatic polling no longer re-renders the entire application shell.
-- Live scoreboard cards are patched in place.
-- Game Graph scores, ATLAS Impact board, and graph wall update in place while preserving the selected game and scroll position.
-- Manual refresh remains available.
-- Keeps ATLAS 45 Signal Engine, archive recovery, weekly recap, team experience, and performance rankings.
+Render-ready ATLAS build. Game Graphs adds a virtual field with a feed-grounded ball-position marker and a recent-play side rail. Smart polling patches these surfaces in place without rebuilding the page. Ball position is plotted only when the provider returns a clear team + yard-line spot.

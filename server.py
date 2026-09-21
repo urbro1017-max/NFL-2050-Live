@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="74.1"
-BUILD_NAME="ATLAS 74.1 REFINED VISUALS"
+VERSION="74.2"
+BUILD_NAME="ATLAS 74.2 REFINED VISUALS"
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -909,7 +909,7 @@ def _captured_player_games(aid,name=None,team=None):
             rows.append({"game_id":str(g.get("id") or gm["id"]),"status":g.get("status"),"team":p.get("team"),"category":p.get("category"),"stats":p.get("stats") or {}})
     return _merge_captured_game_rows(rows)
 
-def player_profile(aid):
+def player_profile(aid, name_hint=None, team_hint=None):
     """Resilient player profile.
     Provider bio is optional; ATLAS roster/archive rows are sufficient to render a profile.
     No upstream player endpoint failure is allowed to turn a valid athlete id into HTTP 502.
@@ -935,17 +935,18 @@ def player_profile(aid):
         except Exception as e: provider_errors.append(src+":"+type(e).__name__)
 
     # ATLAS/roster fallback by the exact athlete id.
-    fallback={}
-    try:
-        fallback=next((x for x in player_index() if str(x.get("id") or "")==aid),{}) or {}
-    except Exception as e: provider_errors.append("ATLAS_PLAYER_INDEX:"+type(e).__name__)
-    if not fallback:
-        # Avoid depending on league-wide index: scan team rosters individually only if needed.
-        for ab in TEAM_IDS:
-            try:
-                row=next((x for x in (team_roster(ab).get("players") or []) if str(x.get("id") or "")==aid),None)
-                if row: fallback=row;break
-            except Exception: pass
+    fallback={"id":aid,"name":str(name_hint or "").strip() or None,"team":norm_team_abbr(team_hint) if team_hint else None}
+    fallback={k:v for k,v in fallback.items() if v not in (None,"")}
+    if team_hint and norm_team_abbr(team_hint) in TEAM_IDS:
+        try:
+            row=next((x for x in (team_roster(norm_team_abbr(team_hint)).get("players") or []) if str(x.get("id") or "")==aid),None)
+            if row:fallback={**fallback,**row}
+        except Exception as e: provider_errors.append("TEAM_ROSTER_FALLBACK:"+type(e).__name__)
+    if not fallback.get("name"):
+        try:
+            row=next((x for x in player_index() if str(x.get("id") or "")==aid),{}) or {}
+            if row:fallback={**fallback,**row}
+        except Exception as e: provider_errors.append("ATLAS_PLAYER_INDEX:"+type(e).__name__)
 
     team=(a.get("team") or {}) if isinstance(a,dict) else {}
     pos=(a.get("position") or {}) if isinstance(a,dict) else {}
@@ -1833,7 +1834,7 @@ def atlas_ai_ask(question):
       "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
       "max_output_tokens":900
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.1"},method="POST")
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.2"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
@@ -1889,7 +1890,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas741.js').exists() and (ROOT/'atlas741.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas742.js').exists() and (ROOT/'atlas742.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2000,12 +2001,11 @@ class H(SimpleHTTPRequestHandler):
             try:return self.sendj(team_roster(team))
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
         if u.path=="/api/player":
-            aid=(q.get("id") or [""])[0]
+            aid=(q.get("id") or [""])[0]; name=(q.get("name") or [None])[0]; team=(q.get("team") or [None])[0]
             if not str(aid).isdigit(): return self.sendj({"ok":False,"error":"Invalid athlete id"},400)
-            try:return self.sendj(player_profile(aid))
+            try:return self.sendj(player_profile(aid,name,team))
             except Exception as e:
-                # Last-resort response keeps the drawer usable instead of surfacing a 502.
-                return self.sendj({"ok":True,"player":{"id":str(aid),"name":"Athlete "+str(aid),"stats":[],"stats_status":"unavailable","archive_games":[],"gamelog":{"events":[],"stats":[]},"source":"ATLAS_SAFE_FALLBACK","profile_error":type(e).__name__},"updated":int(time.time())},200)
+                return self.sendj({"ok":True,"player":{"id":str(aid),"name":name or ("Athlete "+str(aid)),"team":norm_team_abbr(team) if team else None,"stats":[],"stats_status":"unavailable","archive_games":[],"gamelog":{"events":[],"stats":[]},"source":"ATLAS_SAFE_FALLBACK","profile_error":type(e).__name__},"updated":int(time.time())},200)
         if u.path=="/api/teamstats":
             team=(q.get("team") or [""])[0]
             try:return self.sendj(_team_season_stats(team))
@@ -2013,7 +2013,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas741.js","css":"atlas741.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas742.js","css":"atlas742.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

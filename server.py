@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="57.0"
-BUILD_NAME="ATLAS POSTGAME PIPELINE"
+VERSION="58.0"
+BUILD_NAME="ATLAS UNIFIED STATS PIPELINE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -428,7 +428,7 @@ def game(gid,save=True,prefer_archive=True):
     comp=((d.get("header") or {}).get("competitions") or [{}])[0]
     teams=[]; lines={}; team_id_to_abbr={}
     for c in comp.get("competitors") or []:
-        t=c.get("team") or {}; ab=(t.get("abbreviation") or "").upper()
+        t=c.get("team") or {}; ab=norm_team_abbr(t.get("abbreviation"))
         if t.get("id") is not None: team_id_to_abbr[str(t.get("id"))]=ab
         lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
         teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
@@ -436,10 +436,10 @@ def game(gid,save=True,prefer_archive=True):
     out={"id":gid,"available":True,"status":typ.get("shortDetail") or typ.get("description") or "Scheduled","state":typ.get("state") or "pre","completed":bool(typ.get("completed")),"period":st.get("period") or 0,"clock":st.get("displayClock") or (st.get("clock") or {}).get("displayValue") or "—","teams":teams,"team_stats":{},"players":[],"plays":[],"drives":[],"scoring_plays":[],"linescores":lines,"source":PROVIDER+":"+chosen_name,"fetched_at":int(time.time())}
 
     for t in ((d.get("boxscore") or {}).get("teams") or []):
-        ab=((t.get("team") or {}).get("abbreviation") or "").upper()
+        ab=norm_team_abbr((t.get("team") or {}).get("abbreviation"))
         out["team_stats"][ab]={str(x.get("label") or x.get("name")):x.get("displayValue") for x in t.get("statistics") or []}
     for grp in ((d.get("boxscore") or {}).get("players") or []):
-        ab=((grp.get("team") or {}).get("abbreviation") or "").upper()
+        ab=norm_team_abbr((grp.get("team") or {}).get("abbreviation"))
         for cat in grp.get("statistics") or []:
             labels=cat.get("labels") or []; cname=cat.get("name") or cat.get("label") or "stats"
             for row in cat.get("athletes") or []:
@@ -1008,10 +1008,48 @@ def _league_structure(standings, leaders, profiles):
                 team_leaders[ab].append({'category':cat,'name':x.get('name'),'value':x.get('value')})
     return {'alignment':NFL_ALIGNMENT,'conferences':conferences,'divisions':divisions,'power':power,'teamLeaders':team_leaders}
 
+def _archive_team_season_stats(team):
+    """Aggregate team totals from ATLAS-owned completed-game records.
+    This is the durable source used by Teams/AI when public season-stat feeds lag.
+    """
+    team=norm_team_abbr(team); games=[]; totals={}; wins=losses=ties=0; pf=pa=0
+    for meta in STORE.games():
+        g=STORE.game(str(meta.get("id"))) or {}
+        if not _is_final_game(g): continue
+        ts=g.get("teams") or []; mine=next((x for x in ts if norm_team_abbr(x.get("abbr"))==team),None)
+        if not mine: continue
+        opp=next((x for x in ts if x is not mine),None); games.append(str(g.get("id") or meta.get("id")))
+        try:
+            a=int(mine.get("score") or 0); b=int((opp or {}).get("score") or 0); pf+=a; pa+=b
+            if a>b:wins+=1
+            elif a<b:losses+=1
+            else:ties+=1
+        except Exception: pass
+        raw=(g.get("team_stats") or {}).get(team) or {}
+        # tolerate historical LAR/WSH keys already persisted before normalization
+        if not raw:
+            for k,v in (g.get("team_stats") or {}).items():
+                if norm_team_abbr(k)==team: raw=v; break
+        for label,value in (raw or {}).items():
+            txt=str(value).replace(',','').replace('%','').strip()
+            # ratios (3/10) and clock strings are not additive season totals
+            if '/' in txt or ':' in txt: continue
+            try:n=float(txt)
+            except Exception:continue
+            key=str(label); totals[key]=totals.get(key,0.0)+n
+    rows=[{"category":"ATLAS Final Archive","label":"Games Stored","value":len(games)},
+          {"category":"ATLAS Final Archive","label":"Record","value":f"{wins}-{losses}"+(f"-{ties}" if ties else "")},
+          {"category":"ATLAS Final Archive","label":"Points For","value":pf},
+          {"category":"ATLAS Final Archive","label":"Points Against","value":pa},
+          {"category":"ATLAS Final Archive","label":"Point Differential","value":pf-pa}]
+    for k,v in sorted(totals.items()): rows.append({"category":"ATLAS Final Archive","label":k,"value":round(v,2) if v%1 else int(v)})
+    return {"ok":bool(games),"team":team,"stats":rows if games else [],"source":"ATLAS_FINAL_ARCHIVE_TEAM_TOTALS","stored_games":len(games),"game_ids":games,"updated":int(time.time())}
+
 def _team_season_stats(team):
-    """Verified 2026 regular-season team totals from ESPN Core."""
-    team=str(team or '').upper()
+    """Team totals with ATLAS final-game persistence as the durable fallback."""
+    team=norm_team_abbr(team)
     if team not in TEAM_IDS:return {"ok":False,"team":team,"stats":[],"error":"Unknown NFL team"}
+    archived=_archive_team_season_stats(team)
     tid=TEAM_IDS[team]
     attempts=[
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/{tid}/statistics","ESPN_CORE_TEAM_STATS_2026"),
@@ -1022,9 +1060,10 @@ def _team_season_stats(team):
     for url,src in attempts:
         try:
             raw=fetch(url,src); rows=_flatten_stats(raw)
-            if rows:return {"ok":True,"team":team,"stats":rows,"source":src,"updated":int(time.time())}
+            if rows:return {"ok":True,"team":team,"stats":rows,"source":src,"archive":archived,"updated":int(time.time())}
         except Exception as e:errs.append(f"{src}:{type(e).__name__}")
-    return {"ok":False,"team":team,"stats":[],"source":None,"errors":errs,"updated":int(time.time())}
+    if archived.get("ok"): return {**archived,"errors":errs}
+    return {"ok":False,"team":team,"stats":[],"source":None,"archive":archived,"errors":errs,"updated":int(time.time())}
 
 def _core_stat_rows(raw):
     """Normalize the season-scoped Core athlete statistics schema first, then fall back."""
@@ -1315,6 +1354,14 @@ def repair_player_stats_once(limit=12):
         except Exception as e: failed+=1; errors.append(f"{gid}: {type(e).__name__}")
     return {"missing_before":len(finals),"attempted":min(len(finals),max(1,int(limit))),"repaired":repaired,"failed":failed,"remaining":max(0,len(finals)-repaired),"errors":errors[-5:]}
 
+def unified_stats_health():
+    pg=postgame_stats()
+    teams={}
+    for ab in TEAM_IDS:
+        d=_archive_team_season_stats(ab)
+        teams[ab]={"stored_games":d.get("stored_games",0),"stat_rows":len(d.get("stats") or [])}
+    return {"ok":True,"version":VERSION,"database":STORE.kind,"postgame":{k:pg.get(k) for k in ("final_games","games_with_player_stats","games_missing_player_stats","player_game_rows")},"teams":teams,"teams_with_stored_games":sum(1 for x in teams.values() if x["stored_games"]),"updated":int(time.time())}
+
 def postgame_stats():
     rows=STORE.player_stat_rows(); game_ids=STORE.player_stat_game_ids(); finals=[]
     for m in STORE.games():
@@ -1567,7 +1614,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas57.js').exists() and (ROOT/'atlas57.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas58.js').exists() and (ROOT/'atlas58.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1627,6 +1674,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
+        if u.path=="/api/stats-health":return self.sendj(unified_stats_health())
         if u.path=="/api/postgame-stats":
             if (q.get("repair") or ["0"])[0] in ("1","true"): repair_player_stats_once(12)
             return self.sendj(postgame_stats())

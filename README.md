@@ -1,4 +1,4 @@
-# ATLAS 64.0 — Neon Intelligence
+# ATLAS 65.0 — Neon Intelligence
 
 Render-ready NFL Football OS build.
 
@@ -10,3 +10,6 @@ Render-ready NFL Football OS build.
 - duplicated Teams DNA section removed
 - improved readability and neon visual hierarchy
 - normalized database remains source of truth
+
+
+ATLAS 65: professional neon UI, side-by-side AI intelligence boards, animated power/season graphs, and redundant team diagnostics cleanup.

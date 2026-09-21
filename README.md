@@ -1,18 +1,20 @@
-# ATLAS 59.0 — Data Core Rebuild
+# ATLAS 60.0 — FOOTBALL OS
 
-ATLAS 59 replaces the patched archive-to-AI chain with one normalized completed-game data core.
+Render-ready build.
 
-## Data flow
-ESPN ingestion → archived raw final → normalized `team_game_stats` + `player_game_stats` → Teams / Weekly Recap / ATLAS AI.
+## Core rebuild
+- Dedicated completed-game hydration path uses the final ESPN summary/box score instead of relying on whichever live subfeed wins candidate selection.
+- Normalized `team_game_stats` and `player_game_stats` remain the durable source of truth.
+- ATLAS AI aggregates directly from normalized player rows; it no longer needs to reparse archived provider JSON.
+- Team trends and Teams-page completed-game stats read normalized team rows.
+- Startup migration/backfill scans existing Finals and repairs missing player rows through the dedicated final hydrator.
+- Data Center exposes pipeline coverage and repair state.
 
-- `games` remains the raw immutable archive and migration source.
-- `team_game_stats` stores one durable row per team per completed game.
-- `player_game_stats` stores one durable row per player per completed game, merging stat categories.
-- `data_pipeline` records per-game ingestion health (2 team rows expected; player rows when ESPN box scores provide them).
-- Existing archived finals are migrated automatically at startup; missing player box scores are recovered in throttled background batches.
-- Teams reads normalized completed-game rows as its primary stored-stat source.
-- Weekly Recap reads normalized player-game rows.
-- ATLAS AI derives team strength, player production and MVP signal from the same normalized rows.
-- `/api/data-center` and `/api/stats-health` expose pipeline diagnostics without adding another top-level navigation tab.
+## Product pass
+- Football OS command center on Home.
+- Team Data Core health panel.
+- ATLAS AI Model Lab with database pipeline health, team strength visualization, upcoming model board, rankings, season outlook, position leaders and MVP signal.
+- Existing Game Intelligence, headshots, split comparison, Field Vision, replay, weekly recap, and performance loading architecture retained.
 
-No existing raw game archive is deleted.
+## Truth rules
+ATLAS model outputs are derived estimates, not official NFL rankings. Missing provider data remains missing and is never fabricated.

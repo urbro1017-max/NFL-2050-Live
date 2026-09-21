@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="59.0"
-BUILD_NAME="ATLAS DATA CORE REBUILD"
+VERSION="60.0"
+BUILD_NAME="ATLAS FOOTBALL OS"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -581,6 +581,65 @@ def game(gid,save=True,prefer_archive=True):
         LIVE_CACHE[str(gid)]={"ts":time.time(),"value":out}
     return out
 
+
+def hydrate_final_package(gid, persist=True):
+    """Authoritative postgame hydration path. It intentionally bypasses the live
+    candidate chooser and reads ESPN's completed-game summary directly so a stale
+    play-by-play header cannot strand box-score rows outside the database."""
+    gid=str(gid)
+    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}","ESPN_FINAL_SUMMARY")
+    d=_unwrap_espn(raw)
+    comp=((d.get("header") or {}).get("competitions") or [{}])[0]
+    status=(comp.get("status") or {}).get("type") or {}
+    teams=[]; team_stats={}; players=[]; lines={}
+    for c in comp.get("competitors") or []:
+        t=c.get("team") or {}; ab=norm_team_abbr(t.get("abbreviation"))
+        lines[ab]=[x.get("displayValue",x.get("value")) for x in c.get("linescores") or []]
+        teams.append({"side":c.get("homeAway"),"abbr":ab,"name":t.get("displayName") or t.get("shortDisplayName") or ab,"logo":_team_logo(t),"score":c.get("score",0),"color":t.get("color"),"alternateColor":t.get("alternateColor")})
+    for t in ((d.get("boxscore") or {}).get("teams") or []):
+        ab=norm_team_abbr((t.get("team") or {}).get("abbreviation"))
+        team_stats[ab]={str(x.get("label") or x.get("name")):x.get("displayValue") for x in t.get("statistics") or [] if (x.get("label") or x.get("name"))}
+    for grp in ((d.get("boxscore") or {}).get("players") or []):
+        ab=norm_team_abbr((grp.get("team") or {}).get("abbreviation"))
+        for cat in grp.get("statistics") or []:
+            labels=cat.get("labels") or []; cname=cat.get("name") or cat.get("label") or "stats"
+            for row in cat.get("athletes") or []:
+                a=row.get("athlete") or {}; vals=row.get("stats") or []
+                players.append({"id":a.get("id"),"team":ab,"name":a.get("displayName") or a.get("fullName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,vals))})
+    # Schedule discovery is authoritative for Final. For direct hydration we also
+    # accept a complete two-team box score, since ESPN occasionally lags type.state.
+    complete=bool(status.get("completed") or str(status.get("state") or "").lower()=="post")
+    old=STORE.game(gid) or {}
+    out={**old,"id":gid,"available":True,"status":status.get("shortDetail") or status.get("description") or old.get("status") or "Final","state":"post" if complete or old.get("completed") else status.get("state") or old.get("state") or "post","completed":bool(complete or old.get("completed")),"teams":teams or old.get("teams") or [],"team_stats":team_stats or old.get("team_stats") or {},"players":players or old.get("players") or [],"linescores":lines or old.get("linescores") or {},"source":"ESPN_FINAL_SUMMARY","fetched_at":int(time.time())}
+    if len(out.get("teams") or [])==2 and (out.get("completed") or _is_final_game(old)):
+        out["completed"]=True; out["state"]="post"
+        if persist: STORE.save(out)
+    return out
+
+def normalized_player_aggregates():
+    """Aggregate only normalized database rows. AI never reparses raw provider JSON."""
+    players={}
+    for row in STORE.player_stat_rows():
+        key=str(row.get("id") or (str(row.get("name") or "").lower()+"|"+norm_team_abbr(row.get("team"))))
+        x=players.setdefault(key,{"id":row.get("id"),"name":row.get("name"),"team":norm_team_abbr(row.get("team")),"position":str(row.get("position") or "").upper(),"games":set(),"categories":{}})
+        x["games"].add(str(row.get("game_id")))
+        if not x.get("position") and row.get("position"): x["position"]=str(row.get("position")).upper()
+        for cat,stats in (row.get("categories") or {}).items():
+            dst=x["categories"].setdefault(str(cat),{})
+            for label,val in (stats or {}).items():
+                u=str(label).upper().strip()
+                if any(bad in u for bad in ("AVG","RATE","RTG","QBR","PCT","LONG","LNG","Y/A","Y/C")): continue
+                raw=str(val).replace(',','').replace('%','').strip()
+                # Composite stats such as CMP/ATT are deliberately not summed.
+                if '/' in raw: continue
+                try:n=float(raw)
+                except:continue
+                dst[label]=dst.get(label,0)+n
+    out=[]
+    for x in players.values():
+        x=dict(x); x["games"]=len(x.pop("games")); out.append(x)
+    return out
+
 def collect_once():
     # 11.1 Sunday Ready collector. Schedule discovery is cheap; full game hydration
     # is reserved for live games, the kickoff warm-up window, and one final capture.
@@ -635,7 +694,7 @@ def collector():
             # Historical recovery is automatic and throttled. This is what lets Atlas
             # repair Week 1 / missed finals without the user opening each game.
             backfill_once(False)
-            try: repair_player_stats_once(4)
+            try: repair_player_stats_once(12)
             except Exception as e: LAST["player_stats_repair_error"]=f"{type(e).__name__}: {e}"
         except Exception as e:
             LAST["collector_errors"]=[f"collector: {type(e).__name__}"]
@@ -1383,7 +1442,7 @@ def rebuild_data_core_once(limit=12,force_fetch=False):
     missing=[gid for gid in finals if gid not in have]
     for gid in missing[:max(1,int(limit))]:
         try:
-            fresh=game(gid,True,prefer_archive=False)
+            fresh=hydrate_final_package(gid,True)
             if _is_final_game(fresh):
                 res=STORE.ingest_final(fresh); fetched+=1 if res.get("players") else 0
                 if not res.get("players"):errors.append(f"{gid}: provider returned no player rows")
@@ -1494,29 +1553,15 @@ def archive_intelligence():
 
 
 def archive_trends(team=None):
-    """Chronological, archive-only club trend rows. No projected values."""
+    """Chronological trends from normalized team-game rows only."""
     team=norm_team_abbr(team) if team else None
     rows=[]
-    for meta in STORE.games():
-        g=STORE.game(str(meta.get("id"))) or {}
-        if not _is_final_game(g): continue
-        ts=g.get("teams") or []
-        if len(ts)!=2: continue
-        for t in ts:
-            ab=norm_team_abbr(t.get("abbr"))
-            if team and ab!=team: continue
-            opp=next((z for z in ts if z is not t),{})
-            try: pf=int(t.get("score") or 0); pa=int(opp.get("score") or 0)
-            except Exception: continue
-            rows.append({"game_id":str(g.get("id") or meta.get("id")),"date":g.get("date"),"team":ab,"opponent":norm_team_abbr(opp.get("abbr")),"points_for":pf,"points_against":pa,"margin":pf-pa,"result":"W" if pf>pa else "L" if pf<pa else "T","plays":len(g.get("plays") or []),"drives":len(g.get("drives") or [])})
-    rows.sort(key=lambda x:str(x.get("date") or ""))
-    # Rolling values only use games actually stored in Atlas.
+    for tr in STORE.team_game_rows(team):
+        rows.append({"game_id":tr.get("game_id"),"date":None,"team":norm_team_abbr(tr.get("team")),"opponent":norm_team_abbr(tr.get("opponent")),"points_for":int(tr.get("points_for") or 0),"points_against":int(tr.get("points_against") or 0),"margin":int(tr.get("points_for") or 0)-int(tr.get("points_against") or 0),"result":tr.get("result"),"plays":0,"drives":0})
     if team:
         for i,r in enumerate(rows):
-            w=rows[max(0,i-2):i+1]
-            r["rolling3_pf"]=round(sum(x["points_for"] for x in w)/len(w),1)
-            r["rolling3_pa"]=round(sum(x["points_against"] for x in w)/len(w),1)
-    return {"ok":True,"team":team,"games":rows,"count":len(rows),"source":"ATLAS_FINAL_ARCHIVE","updated":int(time.time())}
+            w=rows[max(0,i-2):i+1]; r["rolling3_pf"]=round(sum(x["points_for"] for x in w)/len(w),1); r["rolling3_pa"]=round(sum(x["points_against"] for x in w)/len(w),1)
+    return {"ok":True,"team":team,"games":rows,"source":"ATLAS_NORMALIZED_TEAM_GAMES","updated":int(time.time())}
 
 def atlas_insights(team=None):
     """Deterministic observations backed only by captured final-game rows."""
@@ -1552,7 +1597,7 @@ def atlas_projection_engine():
     # Never make the AI screen wait on ESPN. The collector/league routes warm this cache independently.
     lg=(LEAGUE_CACHE.get("value") or {})
     standings=lg.get('standings') or []; power=lg.get('power') or []
-    archive=archive_intelligence() or {}; arch_teams=archive.get('teams') or []; arch_players=archive.get('players') or []
+    archive=archive_intelligence() or {}; arch_teams=archive.get('teams') or []; arch_players=normalized_player_aggregates()
     arch_by={norm_team_abbr(x.get('abbr')):x for x in arch_teams}
     power_by={norm_team_abbr(x.get('abbr')):x for x in power}
     standing_by={norm_team_abbr(x.get('abbr')):x for x in standings if x.get('abbr')}
@@ -1786,7 +1831,7 @@ class H(SimpleHTTPRequestHandler):
 
 if __name__=="__main__":
     try:
-        LAST["data_core_bootstrap"]=rebuild_data_core_once(12)
+        LAST["data_core_bootstrap"]=rebuild_data_core_once(64)
     except Exception as e:
         LAST["data_core_bootstrap"]={"error":f"{type(e).__name__}: {e}"}
     threading.Thread(target=collector,daemon=True).start()

@@ -1,10 +1,10 @@
-# ATLAS 56.0 — GAME INTELLIGENCE
+# ATLAS 56.1 — Performance
 
-Built from the working ATLAS 55 Shape Guard base.
+Render-ready ATLAS build focused on non-blocking navigation and a faster archive-first AI path.
 
-- Compact team-split player impact with player headshots when resolvable.
-- Clean neon team comparison.
-- Removed Play Share by Quarter, Captured Plays by Quarter, Plays by Quarter and Game Tempo from the active Game Graphs screen.
-- Replaced filler graphics with scoring flow, drive production, Game Story, momentum events, replay, field position and rating receipts.
-- ATLAS AI normalizes projection payloads and reads archive intelligence as a fallback for stored player production.
-- Preserves archive/database persistence and 55 data-shape guards.
+- Existing page remains visible while the next route loads.
+- Full-screen ATLAS loader is only used for the initial app start.
+- In-flight API requests remain deduplicated and cached.
+- Projection requests no longer block on live ESPN standings/schedule calls; warm provider caches enrich the archive-first model.
+- Projection trend calculation scans the archive once instead of once per NFL team.
+- ATLAS 56 Game Intelligence UI and shape guards are preserved.

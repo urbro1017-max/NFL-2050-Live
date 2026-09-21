@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="56.0"
-BUILD_NAME="ATLAS GAME INTELLIGENCE"
+VERSION="56.1"
+BUILD_NAME="ATLAS PERFORMANCE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1359,15 +1359,18 @@ def _record_parts(record):
 def _clamp(v,lo,hi): return max(lo,min(hi,v))
 
 def atlas_projection_engine():
-    """ATLAS 56 projection engine: database-backed, archive-first, fault-isolated, and explainable."""
-    try: lg=league_hq() or {}
-    except Exception: lg={}
+    """ATLAS 56.1 projection engine: archive-first and non-blocking. Public feeds enrich from warm cache only."""
+    # Never make the AI screen wait on ESPN. The collector/league routes warm this cache independently.
+    lg=(LEAGUE_CACHE.get("value") or {})
     standings=lg.get('standings') or []; power=lg.get('power') or []
     archive=archive_intelligence() or {}; arch_teams=archive.get('teams') or []; arch_players=archive.get('players') or []
     arch_by={norm_team_abbr(x.get('abbr')):x for x in arch_teams}
     power_by={norm_team_abbr(x.get('abbr')):x for x in power}
     standing_by={norm_team_abbr(x.get('abbr')):x for x in standings if x.get('abbr')}
     teams=[]
+    trend_rows=(archive_trends(None).get('games') or [])
+    trends_by={}
+    for tr in trend_rows: trends_by.setdefault(norm_team_abbr(tr.get('team')),[]).append(tr)
     # Always model all 32 clubs. Provider standings enrich the archive; they are not a single point of failure.
     for base in team_index():
         ab=norm_team_abbr(base.get('abbr')); r=standing_by.get(ab) or {}; ar=arch_by.get(ab) or {}
@@ -1378,7 +1381,7 @@ def atlas_projection_engine():
             diff=float(ar.get('points') or 0)-float(ar.get('points_allowed') or 0); record=f'{int(w)}-{int(l)}'
         gp=w+l+t
         pct=(w+.5*t)/gp if gp else .5; dpg=diff/gp if gp else float(ar.get('diff_per_game') or 0)
-        recent=archive_trends(ab).get('games') or []
+        recent=trends_by.get(ab) or []
         recent_margin=sum(x.get('margin',0) for x in recent[-3:])/len(recent[-3:]) if recent else dpg
         expected=_clamp(.55*pct+.25*(.5+_clamp(dpg,-14,14)/56)+.20*(.5+_clamp(recent_margin,-14,14)/56),.15,.85)
         remaining=max(0,17-gp); projected=w+.5*t+remaining*expected
@@ -1388,7 +1391,7 @@ def atlas_projection_engine():
     strength={x['abbr']:x for x in teams}
     games=[]
     try:
-        wk=week_schedule(2026,None,2)
+        wk=(WEEK_CACHE.get('value') or {'games':[]})
         for g in wk.get('games') or []:
             if g.get('state')!='pre': continue
             ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {}); home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})

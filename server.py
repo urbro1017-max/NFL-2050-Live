@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="68.2"
-BUILD_NAME="ATLAS 68.2 GRAPH EXPANSION"
+VERSION="68.5"
+BUILD_NAME="ATLAS 68.5 REFINED VISUALS"
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1765,7 +1765,7 @@ def atlas_ai_ask(question):
       "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
       "max_output_tokens":900
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/68.2"},method="POST")
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/68.5"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())

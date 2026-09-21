@@ -1,4 +1,4 @@
-# ATLAS 65.0 — Neon Intelligence
+# ATLAS 66.0 — Football Intelligence OS
 
 Render-ready NFL Football OS build.
 

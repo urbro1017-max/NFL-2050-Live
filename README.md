@@ -1,4 +1,7 @@
-# ATLAS 66.1 — Football Intelligence OS
+# ATLAS 67.0 — Home Arena
+
+Major visual release: true side-by-side AI hierarchy/projected-finish boards, larger typography, and a rebuilt visual homepage.
+
 
 Render-ready NFL Football OS build.
 
@@ -15,5 +18,5 @@ Render-ready NFL Football OS build.
 ATLAS 65: professional neon UI, side-by-side AI intelligence boards, animated power/season graphs, and redundant team diagnostics cleanup.
 
 
-## 66.1 cache synchronization
-Frontend assets now use unique 66.1 filenames. The browser checks `/api/build` with no-store and performs one automatic cache-busted reload when a deployment changes server versions, instead of requiring a manual hard refresh.
+## 67.0 cache synchronization
+Frontend assets now use unique 67.0 filenames. The browser checks `/api/build` with no-store and performs one automatic cache-busted reload when a deployment changes server versions, instead of requiring a manual hard refresh.

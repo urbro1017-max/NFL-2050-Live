@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="74.0"
-BUILD_NAME="ATLAS 74.0 REFINED VISUALS"
+VERSION="74.1"
+BUILD_NAME="ATLAS 74.1 REFINED VISUALS"
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -910,36 +910,89 @@ def _captured_player_games(aid,name=None,team=None):
     return _merge_captured_game_rows(rows)
 
 def player_profile(aid):
+    """Resilient player profile.
+    Provider bio is optional; ATLAS roster/archive rows are sufficient to render a profile.
+    No upstream player endpoint failure is allowed to turn a valid athlete id into HTTP 502.
+    """
     aid=str(aid or "")
     if not aid.isdigit():return {"ok":False,"error":"Invalid athlete id"}
     now=time.time()
     with PROFILE_CACHE_LOCK:
         c=PROFILE_CACHE.get(aid)
         if c and now-c["ts"]<PROFILE_CACHE_SECONDS:return c["value"]
-    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{aid}","ESPN_ATHLETE_PROFILE")
-    a=raw.get("athlete") if isinstance(raw.get("athlete"),dict) else raw
-    # Profile fallback: common/v3 often carries richer bio fields.
-    if not isinstance(a,dict) or not (a.get("fullName") or a.get("displayName")):
+
+    provider_errors=[]; a={}
+    # Provider bio is enrichment, not a hard dependency.
+    for url,src in [
+        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/athletes/{aid}","ESPN_ATHLETE_PROFILE"),
+        (f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}","ESPN_WEB_ATHLETE_PROFILE"),
+    ]:
         try:
-            wr=fetch(f"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{aid}","ESPN_WEB_ATHLETE_PROFILE")
-            a=wr.get("athlete") if isinstance(wr.get("athlete"),dict) else wr
-        except Exception: a=a if isinstance(a,dict) else {}
+            raw=fetch(url,src)
+            cand=raw.get("athlete") if isinstance(raw,dict) and isinstance(raw.get("athlete"),dict) else raw
+            if isinstance(cand,dict) and (cand.get("fullName") or cand.get("displayName")):
+                a=cand;break
+        except Exception as e: provider_errors.append(src+":"+type(e).__name__)
+
+    # ATLAS/roster fallback by the exact athlete id.
+    fallback={}
+    try:
+        fallback=next((x for x in player_index() if str(x.get("id") or "")==aid),{}) or {}
+    except Exception as e: provider_errors.append("ATLAS_PLAYER_INDEX:"+type(e).__name__)
+    if not fallback:
+        # Avoid depending on league-wide index: scan team rosters individually only if needed.
+        for ab in TEAM_IDS:
+            try:
+                row=next((x for x in (team_roster(ab).get("players") or []) if str(x.get("id") or "")==aid),None)
+                if row: fallback=row;break
+            except Exception: pass
+
     team=(a.get("team") or {}) if isinstance(a,dict) else {}
     pos=(a.get("position") or {}) if isinstance(a,dict) else {}
     exp=(a.get("experience") or {}) if isinstance(a,dict) else {}
     college=(a.get("college") or {}) if isinstance(a,dict) else {}
     hs=(a.get("headshot") or {}) if isinstance(a,dict) else {}
-    team_ab=team.get("abbreviation")
-    pname=a.get("fullName") or a.get("displayName")
-    stats,stats_source,stat_errors,captured_stats,captured_games=_season_stats(aid,pname,team_ab)
-    gamelog=_game_log(aid)
-    archive_games=_captured_player_games(aid,pname,team_ab)
-    depth_row={}
-    if team_ab in TEAM_IDS:
+    team_ab=norm_team_abbr(team.get("abbreviation") or fallback.get("team"))
+    pname=a.get("fullName") or a.get("displayName") or fallback.get("name") or fallback.get("fullName")
+    position=pos.get("abbreviation") or fallback.get("position")
+    headshot=(hs.get("href") if isinstance(hs,dict) else hs) or fallback.get("headshot") or fallback.get("image")
+
+    # Every enrichment is independently guarded.
+    try: stats,stats_source,stat_errors,captured_stats,captured_games=_season_stats(aid,pname,team_ab)
+    except Exception as e:
+        stats=[];stats_source=None;stat_errors=["PLAYER_STATS:"+type(e).__name__];captured_stats=[];captured_games=0
+    try: gamelog=_game_log(aid)
+    except Exception as e:
+        gamelog={"events":[],"stats":[],"source":None};provider_errors.append("GAMELOG:"+type(e).__name__)
+    try: archive_games=_captured_player_games(aid,pname,team_ab)
+    except Exception as e:
+        archive_games=[];provider_errors.append("ARCHIVE_GAMES:"+type(e).__name__)
+    depth_row=fallback
+    if team_ab in TEAM_IDS and not depth_row:
         try:
             rd=team_roster(team_ab);depth_row=next((x for x in rd.get("players",[]) if str(x.get("id"))==aid),{})
-        except Exception:pass
-    value={"ok":True,"player":{"id":aid,"name":a.get("fullName") or a.get("displayName"),"team":team_ab,"team_name":team.get("displayName"),"position":pos.get("abbreviation"),"position_name":pos.get("displayName") or pos.get("name"),"jersey":a.get("jersey"),"age":a.get("age"),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"experience":exp.get("years") if isinstance(exp,dict) else exp,"college":college.get("name") if isinstance(college,dict) else college,"headshot":hs.get("href") if isinstance(hs,dict) else hs,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),"starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),"stats":stats,"stats_source":stats_source,"stats_status":"verified" if stats else "unavailable","stats_attempt_errors":stat_errors,"captured_stats":captured_stats,"captured_games":captured_games,"archive_games":archive_games,"gamelog":gamelog,"source":"ESPN_ATHLETE_PROFILE+MULTI_SOURCE_STATS+DEPTHCHART"},"updated":int(now)}
+        except Exception: depth_row={}
+
+    # Prefer official season rows, otherwise expose captured aggregate truthfully.
+    display_stats=stats if stats else captured_stats
+    status="verified" if stats else ("archived" if captured_stats or archive_games else "unavailable")
+    value={"ok":True,"player":{
+        "id":aid,"name":pname or f"Athlete {aid}","team":team_ab or None,
+        "team_name":team.get("displayName") or fallback.get("team_name"),
+        "position":position,"position_name":pos.get("displayName") or pos.get("name") or position,
+        "jersey":a.get("jersey") or fallback.get("jersey") or fallback.get("number"),
+        "age":a.get("age"),"height":a.get("displayHeight") or fallback.get("height"),
+        "weight":a.get("displayWeight") or fallback.get("weight"),
+        "experience":exp.get("years") if isinstance(exp,dict) else exp,
+        "college":college.get("name") if isinstance(college,dict) else college,
+        "headshot":headshot,"birth_place":((a.get("birthPlace") or {}).get("city") if isinstance(a.get("birthPlace"),dict) else None),
+        "starter":bool(depth_row.get("starter")),"depth_rank":depth_row.get("depth_rank"),"depth_slot":depth_row.get("depth_slot"),
+        "stats":display_stats,"stats_source":stats_source or ("ATLAS_CAPTURED_FINALS" if display_stats else None),
+        "stats_status":status,"stats_attempt_errors":(stat_errors or [])+provider_errors,
+        "captured_stats":captured_stats,"captured_games":captured_games or len(archive_games),
+        "archive_games":archive_games,"gamelog":gamelog,
+        "source":"ESPN_PROFILE+ATLAS_FALLBACK" if a else "ATLAS_ROSTER_ARCHIVE_FALLBACK"
+    },"updated":int(now)}
     with PROFILE_CACHE_LOCK:PROFILE_CACHE[aid]={"ts":now,"value":value}
     return value
 
@@ -1780,7 +1833,7 @@ def atlas_ai_ask(question):
       "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
       "max_output_tokens":900
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.0"},method="POST")
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.1"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
@@ -1836,7 +1889,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas740.js').exists() and (ROOT/'atlas740.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas741.js').exists() and (ROOT/'atlas741.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1948,8 +2001,11 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"players":[],"error":str(e)},502)
         if u.path=="/api/player":
             aid=(q.get("id") or [""])[0]
+            if not str(aid).isdigit(): return self.sendj({"ok":False,"error":"Invalid athlete id"},400)
             try:return self.sendj(player_profile(aid))
-            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+            except Exception as e:
+                # Last-resort response keeps the drawer usable instead of surfacing a 502.
+                return self.sendj({"ok":True,"player":{"id":str(aid),"name":"Athlete "+str(aid),"stats":[],"stats_status":"unavailable","archive_games":[],"gamelog":{"events":[],"stats":[]},"source":"ATLAS_SAFE_FALLBACK","profile_error":type(e).__name__},"updated":int(time.time())},200)
         if u.path=="/api/teamstats":
             team=(q.get("team") or [""])[0]
             try:return self.sendj(_team_season_stats(team))
@@ -1957,7 +2013,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas740.js","css":"atlas740.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas741.js","css":"atlas741.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

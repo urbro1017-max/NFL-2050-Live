@@ -1,4 +1,4 @@
-# ATLAS 74.2 — Refined Visual Intelligence
+# ATLAS 74.3 — Refined Visual Intelligence
 
 A visual overhaul built on the working ATLAS 67.1 data pipeline.
 
@@ -18,20 +18,23 @@ A visual overhaul built on the working ATLAS 67.1 data pipeline.
 Upload the extracted repository contents to GitHub/Render. Do not commit a local SQLite database or an OpenAI API key.
 
 
-## 74.2 refinement
+## 74.3 refinement
 Removed redundant visual layers from Home, Teams, and ATLAS AI so each metric has one primary home. Game, Game Graphs, and Weekly Recap retain supplemental visuals where they add distinct information. Homepage model-leader duplication was removed and spacing/hierarchy tightened.
 
 
-ATLAS 74.2 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
+ATLAS 74.3 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
 
 
-ATLAS 74.2 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
+ATLAS 74.3 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
 
 
-ATLAS 74.2 Connected Intelligence: contextual grounded OpenAI reasoning, player intelligence drawer, Compare Lab, live game pulse/game-day mode, position-aware impact ordering, team timeline, prediction receipts, confidence badges, favorite team, command search 2.0, and mobile refinements.
+ATLAS 74.3 Connected Intelligence: contextual grounded OpenAI reasoning, player intelligence drawer, Compare Lab, live game pulse/game-day mode, position-aware impact ordering, team timeline, prediction receipts, confidence badges, favorite team, command search 2.0, and mobile refinements.
 
 
-74.2 Production Recovery: player profile endpoint is resilient to ESPN profile/stat/gamelog failures, falls back to ATLAS roster/archive data, drawer accepts list/object stats, and duplicate simultaneous API requests are coalesced.
+74.3 Production Recovery: player profile endpoint is resilient to ESPN profile/stat/gamelog failures, falls back to ATLAS roster/archive data, drawer accepts list/object stats, and duplicate simultaneous API requests are coalesced.
 
 
-74.2: player drawer passes known roster name/team into the backend; player profiles can render from team roster + ATLAS archive without requiring ESPN athlete-profile success. Stale bundled SQLite DB removed.
+74.3: player drawer passes known roster name/team into the backend; player profiles can render from team roster + ATLAS archive without requiring ESPN athlete-profile success. Stale bundled SQLite DB removed.
+
+
+74.3 Player Intelligence: position-aware production filtering and readable archived game context (opponent/date/result when stored). Irrelevant QB stats are no longer shown on TE/WR/RB profiles.

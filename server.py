@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="68.5"
-BUILD_NAME="ATLAS 68.5 REFINED VISUALS"
+VERSION="68.6"
+BUILD_NAME="ATLAS 68.6 REFINED VISUALS"
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1765,7 +1765,7 @@ def atlas_ai_ask(question):
       "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
       "max_output_tokens":900
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/68.5"},method="POST")
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/68.6"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
@@ -1942,7 +1942,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas682.js","css":"atlas682.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas686.js","css":"atlas686.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
@@ -1961,7 +1961,7 @@ if __name__=="__main__":
         LAST["data_core_bootstrap"]=rebuild_data_core_once(64)
     except Exception as e:
         LAST["data_core_bootstrap"]={"error":f"{type(e).__name__}: {e}"}
-    rebuild_ai_snapshot()
-    threading.Thread(target=ai_snapshot_worker,daemon=True).start()
-    threading.Thread(target=collector,daemon=True).start()
+    # Start serving immediately; projection snapshot warms in the background.
+    threading.Thread(target=ai_snapshot_worker,daemon=True,name="atlas-ai-snapshot").start()
+    threading.Thread(target=collector,daemon=True,name="atlas-collector").start()
     ThreadingHTTPServer((HOST,PORT),H).serve_forever()

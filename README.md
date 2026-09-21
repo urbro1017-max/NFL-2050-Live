@@ -1,17 +1,18 @@
-# ATLAS 58.0 — Unified Stats Pipeline
+# ATLAS 59.0 — Data Core Rebuild
 
-Render-ready build focused on one durable path: completed game -> persistent database -> Teams / Weekly Recap / ATLAS AI.
+ATLAS 59 replaces the patched archive-to-AI chain with one normalized completed-game data core.
 
-## Changes
-- Normalizes team abbreviations before final-game persistence.
-- Persists normalized player game rows for completed games and merges a player's categories by game.
-- Adds archive-derived team season totals so the Teams tab is populated from ATLAS-owned completed games when ESPN's season-stat endpoint is unavailable or delayed.
-- Weekly Recap and ATLAS AI consume the same normalized player-game database.
-- ATLAS AI continues to model all 32 teams and builds fantasy/MVP signals from stored final-game player production.
-- Adds `/api/stats-health` to expose postgame coverage and per-team stored-game coverage.
-- Cache-busted frontend assets to atlas58.
+## Data flow
+ESPN ingestion → archived raw final → normalized `team_game_stats` + `player_game_stats` → Teams / Weekly Recap / ATLAS AI.
 
-## Validation performed
-- JavaScript syntax check.
-- Python compile check.
-- Synthetic completed-game test verified: final -> database -> merged player rows -> KC team totals -> 32-team projection engine -> fantasy/MVP output -> stats-health.
+- `games` remains the raw immutable archive and migration source.
+- `team_game_stats` stores one durable row per team per completed game.
+- `player_game_stats` stores one durable row per player per completed game, merging stat categories.
+- `data_pipeline` records per-game ingestion health (2 team rows expected; player rows when ESPN box scores provide them).
+- Existing archived finals are migrated automatically at startup; missing player box scores are recovered in throttled background batches.
+- Teams reads normalized completed-game rows as its primary stored-stat source.
+- Weekly Recap reads normalized player-game rows.
+- ATLAS AI derives team strength, player production and MVP signal from the same normalized rows.
+- `/api/data-center` and `/api/stats-health` expose pipeline diagnostics without adding another top-level navigation tab.
+
+No existing raw game archive is deleted.

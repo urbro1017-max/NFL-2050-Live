@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="58.0"
-BUILD_NAME="ATLAS UNIFIED STATS PIPELINE"
+VERSION="59.0"
+BUILD_NAME="ATLAS DATA CORE REBUILD"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -83,7 +83,10 @@ class Store:
                     CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);
                     CREATE TABLE IF NOT EXISTS player_game_stats(game_id TEXT NOT NULL,player_key TEXT NOT NULL,player_id TEXT,name TEXT,team TEXT,position TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,player_key));
                     CREATE INDEX IF NOT EXISTS ix_pgs_game ON player_game_stats(game_id);
-                    CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);""")
+                    CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);
+                    CREATE TABLE IF NOT EXISTS team_game_stats(game_id TEXT NOT NULL,team TEXT NOT NULL,opponent TEXT,points_for INTEGER,points_against INTEGER,result TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,team));
+                    CREATE INDEX IF NOT EXISTS ix_tgs_team ON team_game_stats(team);
+                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);""")
             except Exception as e:
                 LAST["error"]="Postgres fallback: "+str(e); self.pg=None
         if not self.pg:
@@ -92,7 +95,10 @@ class Store:
             CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);
             CREATE TABLE IF NOT EXISTS player_game_stats(game_id TEXT NOT NULL,player_key TEXT NOT NULL,player_id TEXT,name TEXT,team TEXT,position TEXT,stats TEXT,updated INTEGER,PRIMARY KEY(game_id,player_key));
             CREATE INDEX IF NOT EXISTS ix_pgs_game ON player_game_stats(game_id);
-            CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);"""); c.commit(); c.close()
+            CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);
+                    CREATE TABLE IF NOT EXISTS team_game_stats(game_id TEXT NOT NULL,team TEXT NOT NULL,opponent TEXT,points_for INTEGER,points_against INTEGER,result TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,team));
+                    CREATE INDEX IF NOT EXISTS ix_tgs_team ON team_game_stats(team);
+                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);"""); c.commit(); c.close()
     def conn(self):
         if self.pg:return self.pg.connect(DATABASE_URL,autocommit=True)
         c=sqlite3.connect(DBFILE);c.row_factory=sqlite3.Row;return c
@@ -122,8 +128,8 @@ class Store:
         else:c.execute("INSERT INTO games VALUES(?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,updated=excluded.updated",(g["id"],payload,g.get("status",""),now))
         if _final(g):
             if not self.pg: c.commit()
-            try:self.save_player_stats(g)
-            except Exception as e: LAST["player_stats_error"]=f"{type(e).__name__}: {e}"
+            try:self.ingest_final(g)
+            except Exception as e: LAST["final_ingest_error"]=f"{type(e).__name__}: {e}"
         snap={"t":now,"status":g.get("status"),"scores":{x["abbr"]:x["score"] for x in g.get("teams",[])},"team_stats":g.get("team_stats",{}),"players":g.get("players",[])}
         rows=self.snaps(g["id"]); prev=rows[-1] if rows else None
         if not prev or prev.get("scores")!=snap["scores"] or prev.get("team_stats")!=snap["team_stats"]:
@@ -158,6 +164,50 @@ class Store:
                 c.execute("INSERT INTO player_game_stats(game_id,player_key,player_id,name,team,position,stats,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id,player_key) DO UPDATE SET player_id=excluded.player_id,name=excluded.name,team=excluded.team,position=excluded.position,stats=excluded.stats,updated=excluded.updated",vals)
         if not self.pg:c.commit()
         c.close(); return len(merged)
+    def ingest_final(self,g):
+        """Single write path for every completed game. Raw provider JSON remains archived,
+        while all product features read these normalized rows."""
+        if not g or not (g.get("completed") or str(g.get("state") or "").lower()=="post"): return {"teams":0,"players":0}
+        gid=str(g.get("id") or ""); now=int(time.time()); teams=g.get("teams") or []
+        if not gid or len(teams)<2: return {"teams":0,"players":0}
+        c=self.conn(); tw=0
+        try:
+            for t in teams:
+                ab=norm_team_abbr(t.get("abbr")); opp=next((norm_team_abbr(x.get("abbr")) for x in teams if x is not t),"")
+                if not ab: continue
+                try: pf=int(float(t.get("score") or 0))
+                except: pf=0
+                ot=next((x for x in teams if x is not t),{})
+                try: pa=int(float(ot.get("score") or 0))
+                except: pa=0
+                result="W" if pf>pa else "L" if pf<pa else "T"
+                stats=(g.get("team_stats") or {}).get(ab) or {}
+                vals=(gid,ab,opp,pf,pa,result,json.dumps(stats),now)
+                if self.pg:c.execute("INSERT INTO team_game_stats(game_id,team,opponent,points_for,points_against,result,stats,updated) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s) ON CONFLICT(game_id,team) DO UPDATE SET opponent=excluded.opponent,points_for=excluded.points_for,points_against=excluded.points_against,result=excluded.result,stats=excluded.stats,updated=excluded.updated",vals)
+                else:c.execute("INSERT INTO team_game_stats(game_id,team,opponent,points_for,points_against,result,stats,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id,team) DO UPDATE SET opponent=excluded.opponent,points_for=excluded.points_for,points_against=excluded.points_against,result=excluded.result,stats=excluded.stats,updated=excluded.updated",vals)
+                tw+=1
+            if not self.pg:c.commit()
+        finally:c.close()
+        pw=self.save_player_stats(g)
+        c=self.conn(); vals=(gid,True if self.pg else 1,tw,pw,g.get("source"),now,None)
+        if self.pg:c.execute("INSERT INTO data_pipeline(game_id,is_final,teams_written,players_written,source,updated,error) VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(game_id) DO UPDATE SET is_final=excluded.is_final,teams_written=excluded.teams_written,players_written=excluded.players_written,source=excluded.source,updated=excluded.updated,error=excluded.error",vals)
+        else:c.execute("INSERT INTO data_pipeline(game_id,is_final,teams_written,players_written,source,updated,error) VALUES(?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET is_final=excluded.is_final,teams_written=excluded.teams_written,players_written=excluded.players_written,source=excluded.source,updated=excluded.updated,error=excluded.error",vals);c.commit()
+        c.close(); return {"teams":tw,"players":pw}
+    def team_game_rows(self,team=None):
+        c=self.conn(); sql="SELECT game_id,team,opponent,points_for,points_against,result,stats,updated FROM team_game_stats"; args=()
+        if team: sql += " WHERE team="+("%s" if self.pg else "?"); args=(norm_team_abbr(team),)
+        sql += " ORDER BY updated,game_id"; rows=c.execute(sql,args).fetchall(); c.close(); out=[]
+        for r in rows:
+            v=list(r) if self.pg else [r[k] for k in ("game_id","team","opponent","points_for","points_against","result","stats","updated")]
+            st=v[6]; st=json.loads(st) if isinstance(st,str) else (st or {})
+            out.append({"game_id":v[0],"team":v[1],"opponent":v[2],"points_for":v[3],"points_against":v[4],"result":v[5],"stats":st,"updated":v[7]})
+        return out
+    def pipeline_rows(self):
+        c=self.conn(); rows=c.execute("SELECT game_id,is_final,teams_written,players_written,source,updated,error FROM data_pipeline ORDER BY updated DESC").fetchall(); c.close(); out=[]
+        for r in rows:
+            v=list(r) if self.pg else [r[k] for k in ("game_id","is_final","teams_written","players_written","source","updated","error")]
+            out.append({"game_id":v[0],"final":bool(v[1]),"teams_written":int(v[2] or 0),"players_written":int(v[3] or 0),"source":v[4],"updated":v[5],"error":v[6]})
+        return out
     def player_stat_rows(self,game_id=None):
         c=self.conn(); sql="SELECT game_id,player_id,name,team,position,stats,updated FROM player_game_stats"; args=()
         if game_id is not None: sql += " WHERE game_id="+("%s" if self.pg else "?"); args=(str(game_id),)
@@ -1009,47 +1059,29 @@ def _league_structure(standings, leaders, profiles):
     return {'alignment':NFL_ALIGNMENT,'conferences':conferences,'divisions':divisions,'power':power,'teamLeaders':team_leaders}
 
 def _archive_team_season_stats(team):
-    """Aggregate team totals from ATLAS-owned completed-game records.
-    This is the durable source used by Teams/AI when public season-stat feeds lag.
-    """
-    team=norm_team_abbr(team); games=[]; totals={}; wins=losses=ties=0; pf=pa=0
-    for meta in STORE.games():
-        g=STORE.game(str(meta.get("id"))) or {}
-        if not _is_final_game(g): continue
-        ts=g.get("teams") or []; mine=next((x for x in ts if norm_team_abbr(x.get("abbr"))==team),None)
-        if not mine: continue
-        opp=next((x for x in ts if x is not mine),None); games.append(str(g.get("id") or meta.get("id")))
-        try:
-            a=int(mine.get("score") or 0); b=int((opp or {}).get("score") or 0); pf+=a; pa+=b
-            if a>b:wins+=1
-            elif a<b:losses+=1
-            else:ties+=1
-        except Exception: pass
-        raw=(g.get("team_stats") or {}).get(team) or {}
-        # tolerate historical LAR/WSH keys already persisted before normalization
-        if not raw:
-            for k,v in (g.get("team_stats") or {}).items():
-                if norm_team_abbr(k)==team: raw=v; break
-        for label,value in (raw or {}).items():
-            txt=str(value).replace(',','').replace('%','').strip()
-            # ratios (3/10) and clock strings are not additive season totals
-            if '/' in txt or ':' in txt: continue
-            try:n=float(txt)
-            except Exception:continue
-            key=str(label); totals[key]=totals.get(key,0.0)+n
-    rows=[{"category":"ATLAS Final Archive","label":"Games Stored","value":len(games)},
-          {"category":"ATLAS Final Archive","label":"Record","value":f"{wins}-{losses}"+(f"-{ties}" if ties else "")},
-          {"category":"ATLAS Final Archive","label":"Points For","value":pf},
-          {"category":"ATLAS Final Archive","label":"Points Against","value":pa},
-          {"category":"ATLAS Final Archive","label":"Point Differential","value":pf-pa}]
-    for k,v in sorted(totals.items()): rows.append({"category":"ATLAS Final Archive","label":k,"value":round(v,2) if v%1 else int(v)})
-    return {"ok":bool(games),"team":team,"stats":rows if games else [],"source":"ATLAS_FINAL_ARCHIVE_TEAM_TOTALS","stored_games":len(games),"game_ids":games,"updated":int(time.time())}
+    team=norm_team_abbr(team); rows=STORE.team_game_rows(team)
+    if not rows:return {"ok":False,"team":team,"stats":[],"source":"ATLAS_NORMALIZED_TEAM_GAMES","stored_games":0,"game_ids":[],"updated":int(time.time())}
+    totals={}; pf=pa=0
+    for g in rows:
+        pf+=int(g.get("points_for") or 0); pa+=int(g.get("points_against") or 0)
+        for k,v in (g.get("stats") or {}).items():
+            raw=str(v).replace(',','').replace('%','').strip()
+            try:n=float(raw.split('/')[0])
+            except:continue
+            key=str(k); totals[key]=totals.get(key,0)+n
+    out=[{"category":"ATLAS Data Core","label":"Games Stored","value":len(rows)},{"category":"ATLAS Data Core","label":"Points For","value":pf},{"category":"ATLAS Data Core","label":"Points Against","value":pa},{"category":"ATLAS Data Core","label":"Point Differential","value":pf-pa}]
+    for k,v in sorted(totals.items()):out.append({"category":"ATLAS Data Core","label":k,"value":round(v,2) if v%1 else int(v)})
+    return {"ok":True,"team":team,"stats":out,"source":"ATLAS_NORMALIZED_TEAM_GAMES","stored_games":len(rows),"game_ids":[x['game_id'] for x in rows],"updated":int(time.time())}
 
 def _team_season_stats(team):
     """Team totals with ATLAS final-game persistence as the durable fallback."""
     team=norm_team_abbr(team)
     if team not in TEAM_IDS:return {"ok":False,"team":team,"stats":[],"error":"Unknown NFL team"}
     archived=_archive_team_season_stats(team)
+    # ATLAS 59: completed-game database is the product source of truth. Provider season
+    # endpoints are used only until this team has a normalized completed-game sample.
+    if archived.get("ok"):
+        return archived
     tid=TEAM_IDS[team]
     attempts=[
       (f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/types/2/teams/{tid}/statistics","ESPN_CORE_TEAM_STATS_2026"),
@@ -1337,22 +1369,30 @@ def backfill_once(force=False):
         return stats
 
 
-def repair_player_stats_once(limit=12):
-    """Hydrate final games whose normalized player rows are missing. Safe/idempotent."""
-    have=STORE.player_stat_game_ids(); finals=[]
+def rebuild_data_core_once(limit=12,force_fetch=False):
+    """Idempotently migrate archived finals, then re-fetch only finals whose player box score is absent."""
+    finals=[]; migrated=0; fetched=0; errors=[]
+    have=STORE.player_stat_game_ids()
     for m in STORE.games():
         g=STORE.game(str(m.get("id"))) or {}
-        if _is_final_game(g) and str(g.get("id") or m.get("id")) not in have: finals.append(str(g.get("id") or m.get("id")))
-    repaired=failed=0; errors=[]
-    for gid in finals[:max(1,int(limit))]:
+        if not _is_final_game(g):continue
+        gid=str(g.get("id") or m.get("id")); finals.append(gid)
+        try:
+            res=STORE.ingest_final(g); migrated+=1 if res.get("teams") else 0
+        except Exception as e:errors.append(f"{gid}: migrate {type(e).__name__}")
+    missing=[gid for gid in finals if gid not in have]
+    for gid in missing[:max(1,int(limit))]:
         try:
             fresh=game(gid,True,prefer_archive=False)
             if _is_final_game(fresh):
-                n=STORE.save_player_stats(fresh); repaired += 1 if n else 0
-                if not n: errors.append(f"{gid}: no player box score rows")
-            else: failed+=1
-        except Exception as e: failed+=1; errors.append(f"{gid}: {type(e).__name__}")
-    return {"missing_before":len(finals),"attempted":min(len(finals),max(1,int(limit))),"repaired":repaired,"failed":failed,"remaining":max(0,len(finals)-repaired),"errors":errors[-5:]}
+                res=STORE.ingest_final(fresh); fetched+=1 if res.get("players") else 0
+                if not res.get("players"):errors.append(f"{gid}: provider returned no player rows")
+        except Exception as e:errors.append(f"{gid}: fetch {type(e).__name__}")
+    have2=STORE.player_stat_game_ids()
+    return {"finals":len(finals),"migrated":migrated,"missing_before":len(missing),"recovered":fetched,"missing_after":len([x for x in finals if x not in have2]),"errors":errors[-8:]}
+
+def repair_player_stats_once(limit=12):
+    return rebuild_data_core_once(limit)
 
 def unified_stats_health():
     pg=postgame_stats()
@@ -1360,7 +1400,7 @@ def unified_stats_health():
     for ab in TEAM_IDS:
         d=_archive_team_season_stats(ab)
         teams[ab]={"stored_games":d.get("stored_games",0),"stat_rows":len(d.get("stats") or [])}
-    return {"ok":True,"version":VERSION,"database":STORE.kind,"postgame":{k:pg.get(k) for k in ("final_games","games_with_player_stats","games_missing_player_stats","player_game_rows")},"teams":teams,"teams_with_stored_games":sum(1 for x in teams.values() if x["stored_games"]),"updated":int(time.time())}
+    return {"ok":True,"version":VERSION,"database":STORE.kind,"postgame":{k:pg.get(k) for k in ("final_games","games_with_player_stats","games_missing_player_stats","player_game_rows")},"pipeline":STORE.pipeline_rows(),"team_game_rows":len(STORE.team_game_rows()),"teams":teams,"teams_with_stored_games":sum(1 for x in teams.values() if x["stored_games"]),"updated":int(time.time())}
 
 def postgame_stats():
     rows=STORE.player_stat_rows(); game_ids=STORE.player_stat_game_ids(); finals=[]
@@ -1433,6 +1473,14 @@ def archive_intelligence():
                 try:n=float(raw)
                 except:continue
                 dst[k]=dst.get(k,0)+n
+    # Data Core team rows are authoritative for team history.
+    if STORE.team_game_rows():
+        teams={}
+        for tr in STORE.team_game_rows():
+            ab=norm_team_abbr(tr.get("team")); x=teams.setdefault(ab,{"abbr":ab,"games":0,"points":0,"points_allowed":0,"wins":0,"losses":0})
+            x["games"]+=1; x["points"]+=int(tr.get("points_for") or 0); x["points_allowed"]+=int(tr.get("points_against") or 0)
+            if tr.get("result")=="W":x["wins"]+=1
+            elif tr.get("result")=="L":x["losses"]+=1
     plist=[]
     for x in players.values():
         x=dict(x); x["games"]=len(x["games"]); plist.append(x)
@@ -1614,7 +1662,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas58.js').exists() and (ROOT/'atlas58.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas59.js').exists() and (ROOT/'atlas59.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1675,6 +1723,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
         if u.path=="/api/stats-health":return self.sendj(unified_stats_health())
+        if u.path=="/api/data-center":return self.sendj(unified_stats_health())
         if u.path=="/api/postgame-stats":
             if (q.get("repair") or ["0"])[0] in ("1","true"): repair_player_stats_once(12)
             return self.sendj(postgame_stats())
@@ -1736,5 +1785,9 @@ class H(SimpleHTTPRequestHandler):
         super().do_GET()
 
 if __name__=="__main__":
+    try:
+        LAST["data_core_bootstrap"]=rebuild_data_core_once(12)
+    except Exception as e:
+        LAST["data_core_bootstrap"]={"error":f"{type(e).__name__}: {e}"}
     threading.Thread(target=collector,daemon=True).start()
     ThreadingHTTPServer((HOST,PORT),H).serve_forever()

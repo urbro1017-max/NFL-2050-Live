@@ -1,22 +1,18 @@
-# ATLAS 67.0 — Home Arena
+# ATLAS 68.0 — Neon Visual Intelligence
 
-Major visual release: true side-by-side AI hierarchy/projected-finish boards, larger typography, and a rebuilt visual homepage.
+A visual overhaul built on the working ATLAS 67.1 data pipeline.
 
+## Visual changes
+- New animated, data-driven neon visualization layer on Home, Games, Teams, Game Graphs, Weekly Recap, and ATLAS AI.
+- Cyan, electric blue, violet, magenta, orange, and aqua accents on a restrained dark interface.
+- Larger page typography and clearer chart labels.
+- Home adds league power spectrum, strength landscape, and player-model coverage.
+- Games adds slate scoring and slate-state visuals.
+- Teams adds performance profile and roster architecture visuals.
+- Game Graphs adds quarter rhythm and drive-flow visuals.
+- Weekly Recap adds scoring pulse and margin map.
+- ATLAS AI adds elite power band and projected-finish visual boards while retaining the side-by-side hierarchy layout.
+- Visuals use returned/stored data only; unavailable data renders an honest empty state.
 
-Render-ready NFL Football OS build.
-
-## 64 changes
-- persistent ATLAS AI chatbot
-- cached AI reads remain non-blocking
-- clearer neon power-ranking visualization
-- position boards expand to every stored position available
-- duplicated Teams DNA section removed
-- improved readability and neon visual hierarchy
-- normalized database remains source of truth
-
-
-ATLAS 65: professional neon UI, side-by-side AI intelligence boards, animated power/season graphs, and redundant team diagnostics cleanup.
-
-
-## 67.0 cache synchronization
-Frontend assets now use unique 67.0 filenames. The browser checks `/api/build` with no-store and performs one automatic cache-busted reload when a deployment changes server versions, instead of requiring a manual hard refresh.
+## Deployment
+Upload the extracted repository contents to GitHub/Render. Do not commit a local SQLite database or an OpenAI API key.

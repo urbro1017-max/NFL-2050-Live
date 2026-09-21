@@ -1,4 +1,4 @@
-import json,os,time,sqlite3,csv,io,threading
+import json,os,time,sqlite3,csv,io,threading,re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="56.1"
-BUILD_NAME="ATLAS PERFORMANCE"
+VERSION="57.0"
+BUILD_NAME="ATLAS POSTGAME PIPELINE"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -80,13 +80,19 @@ class Store:
                 with self.conn() as c:
                     c.execute("""CREATE TABLE IF NOT EXISTS games(game_id TEXT PRIMARY KEY,payload JSONB,status TEXT,updated BIGINT);
                     CREATE TABLE IF NOT EXISTS snapshots(id BIGSERIAL PRIMARY KEY,game_id TEXT,ts BIGINT,payload JSONB);
-                    CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);""")
+                    CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);
+                    CREATE TABLE IF NOT EXISTS player_game_stats(game_id TEXT NOT NULL,player_key TEXT NOT NULL,player_id TEXT,name TEXT,team TEXT,position TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,player_key));
+                    CREATE INDEX IF NOT EXISTS ix_pgs_game ON player_game_stats(game_id);
+                    CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);""")
             except Exception as e:
                 LAST["error"]="Postgres fallback: "+str(e); self.pg=None
         if not self.pg:
             c=sqlite3.connect(DBFILE); c.executescript("""CREATE TABLE IF NOT EXISTS games(game_id TEXT PRIMARY KEY,payload TEXT,status TEXT,updated INTEGER);
             CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY AUTOINCREMENT,game_id TEXT,ts INTEGER,payload TEXT);
-            CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);"""); c.commit(); c.close()
+            CREATE INDEX IF NOT EXISTS ix_snap_game ON snapshots(game_id,ts);
+            CREATE TABLE IF NOT EXISTS player_game_stats(game_id TEXT NOT NULL,player_key TEXT NOT NULL,player_id TEXT,name TEXT,team TEXT,position TEXT,stats TEXT,updated INTEGER,PRIMARY KEY(game_id,player_key));
+            CREATE INDEX IF NOT EXISTS ix_pgs_game ON player_game_stats(game_id);
+            CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);"""); c.commit(); c.close()
     def conn(self):
         if self.pg:return self.pg.connect(DATABASE_URL,autocommit=True)
         c=sqlite3.connect(DBFILE);c.row_factory=sqlite3.Row;return c
@@ -114,6 +120,10 @@ class Store:
         c=self.conn()
         if self.pg:c.execute("INSERT INTO games VALUES(%s,%s::jsonb,%s,%s) ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,updated=excluded.updated",(g["id"],payload,g.get("status",""),now))
         else:c.execute("INSERT INTO games VALUES(?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,updated=excluded.updated",(g["id"],payload,g.get("status",""),now))
+        if _final(g):
+            if not self.pg: c.commit()
+            try:self.save_player_stats(g)
+            except Exception as e: LAST["player_stats_error"]=f"{type(e).__name__}: {e}"
         snap={"t":now,"status":g.get("status"),"scores":{x["abbr"]:x["score"] for x in g.get("teams",[])},"team_stats":g.get("team_stats",{}),"players":g.get("players",[])}
         rows=self.snaps(g["id"]); prev=rows[-1] if rows else None
         if not prev or prev.get("scores")!=snap["scores"] or prev.get("team_stats")!=snap["team_stats"]:
@@ -121,6 +131,46 @@ class Store:
             else:c.execute("INSERT INTO snapshots(game_id,ts,payload) VALUES(?,?,?)",(g["id"],now,json.dumps(snap)))
         if not self.pg:c.commit()
         c.close()
+    def save_player_stats(self,g):
+        if not g or not (g.get("completed") or str(g.get("state") or "").lower()=="post"): return 0
+        merged={}
+        roster={str(r.get("id")):r for r in (g.get("roster_players") or []) if r.get("id") is not None}
+        for row in (g.get("players") or []):
+            if not isinstance(row,dict): continue
+            pid=str(row.get("id")) if row.get("id") is not None else ""
+            rm=roster.get(pid) or {}
+            name=row.get("name") or rm.get("name")
+            team=norm_team_abbr(row.get("team") or rm.get("team"))
+            pos=row.get("position") or rm.get("position")
+            if not name: continue
+            key=pid or (str(name).lower()+"|"+team)
+            x=merged.setdefault(key,{"player_id":pid or None,"name":name,"team":team,"position":pos,"categories":{}})
+            cat=str(row.get("category") or "Other")
+            x["categories"].setdefault(cat,{}).update(row.get("stats") or {})
+        if not merged:return 0
+        now=int(time.time()); c=self.conn()
+        for key,x in merged.items():
+            payload=json.dumps(x["categories"])
+            vals=(str(g.get("id")),key,x.get("player_id"),x.get("name"),x.get("team"),x.get("position"),payload,now)
+            if self.pg:
+                c.execute("INSERT INTO player_game_stats(game_id,player_key,player_id,name,team,position,stats,updated) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s) ON CONFLICT(game_id,player_key) DO UPDATE SET player_id=excluded.player_id,name=excluded.name,team=excluded.team,position=excluded.position,stats=excluded.stats,updated=excluded.updated",vals)
+            else:
+                c.execute("INSERT INTO player_game_stats(game_id,player_key,player_id,name,team,position,stats,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id,player_key) DO UPDATE SET player_id=excluded.player_id,name=excluded.name,team=excluded.team,position=excluded.position,stats=excluded.stats,updated=excluded.updated",vals)
+        if not self.pg:c.commit()
+        c.close(); return len(merged)
+    def player_stat_rows(self,game_id=None):
+        c=self.conn(); sql="SELECT game_id,player_id,name,team,position,stats,updated FROM player_game_stats"; args=()
+        if game_id is not None: sql += " WHERE game_id="+("%s" if self.pg else "?"); args=(str(game_id),)
+        sql += " ORDER BY updated DESC"; rows=c.execute(sql,args).fetchall(); c.close(); out=[]
+        for r in rows:
+            vals=list(r) if self.pg else [r[k] for k in ("game_id","player_id","name","team","position","stats","updated")]
+            st=vals[5]; st=json.loads(st) if isinstance(st,str) else (st or {})
+            out.append({"game_id":vals[0],"id":vals[1],"name":vals[2],"team":vals[3],"position":vals[4],"categories":st,"updated":vals[6]})
+        return out
+    def player_stat_game_ids(self):
+        c=self.conn(); rows=c.execute("SELECT DISTINCT game_id FROM player_game_stats").fetchall(); c.close()
+        return {str(r[0] if self.pg else r["game_id"]) for r in rows}
+
     def games(self):
         c=self.conn(); rows=c.execute("SELECT game_id,status,updated,payload FROM games ORDER BY updated DESC").fetchall();c.close()
         out=[]
@@ -535,6 +585,8 @@ def collector():
             # Historical recovery is automatic and throttled. This is what lets Atlas
             # repair Week 1 / missed finals without the user opening each game.
             backfill_once(False)
+            try: repair_player_stats_once(4)
+            except Exception as e: LAST["player_stats_repair_error"]=f"{type(e).__name__}: {e}"
         except Exception as e:
             LAST["collector_errors"]=[f"collector: {type(e).__name__}"]
         # Slow down when nothing is live; wake faster during games.
@@ -1246,6 +1298,45 @@ def backfill_once(force=False):
         return stats
 
 
+def repair_player_stats_once(limit=12):
+    """Hydrate final games whose normalized player rows are missing. Safe/idempotent."""
+    have=STORE.player_stat_game_ids(); finals=[]
+    for m in STORE.games():
+        g=STORE.game(str(m.get("id"))) or {}
+        if _is_final_game(g) and str(g.get("id") or m.get("id")) not in have: finals.append(str(g.get("id") or m.get("id")))
+    repaired=failed=0; errors=[]
+    for gid in finals[:max(1,int(limit))]:
+        try:
+            fresh=game(gid,True,prefer_archive=False)
+            if _is_final_game(fresh):
+                n=STORE.save_player_stats(fresh); repaired += 1 if n else 0
+                if not n: errors.append(f"{gid}: no player box score rows")
+            else: failed+=1
+        except Exception as e: failed+=1; errors.append(f"{gid}: {type(e).__name__}")
+    return {"missing_before":len(finals),"attempted":min(len(finals),max(1,int(limit))),"repaired":repaired,"failed":failed,"remaining":max(0,len(finals)-repaired),"errors":errors[-5:]}
+
+def postgame_stats():
+    rows=STORE.player_stat_rows(); game_ids=STORE.player_stat_game_ids(); finals=[]
+    for m in STORE.games():
+        g=STORE.game(str(m.get("id"))) or {}
+        if _is_final_game(g): finals.append(str(g.get("id") or m.get("id")))
+    def val(st,words):
+        for cat,items in (st or {}).items():
+            for k,v in (items or {}).items():
+                key=re.sub(r'[^A-Z0-9]','',str(k).upper())
+                if key in words:
+                    try:return float(str(v).replace(',','').replace('%','').split('/')[0])
+                    except: pass
+        return 0.0
+    awards=[]
+    for x in rows:
+        st=x.get("categories") or {}; pos=str(x.get("position") or '').upper()
+        yds=val(st,{"YDS","YARDS"}); td=val(st,{"TD","TDS"}); rec=val(st,{"REC","RECEPTIONS"}); tackles=val(st,{"TOT","TOTAL","TACKLES"}); sacks=val(st,{"SACKS"}); ints=val(st,{"INT","INTERCEPTIONS"})
+        score=yds/10+td*6+rec+tackles*1.2+sacks*4+ints*5
+        if score>0: awards.append({**x,"impact":round(score,1)})
+    awards.sort(key=lambda x:-x["impact"])
+    return {"ok":True,"database":STORE.kind,"final_games":len(finals),"games_with_player_stats":len(game_ids & set(finals)),"games_missing_player_stats":len(set(finals)-game_ids),"player_game_rows":len(rows),"rows":rows,"awards":awards[:24],"updated":int(time.time())}
+
 def archive_intelligence():
     """Read-only analytics over Atlas-owned final-game archives. Collector behavior is untouched."""
     games=[]; players={}; teams={}; total_plays=0; total_drives=0
@@ -1273,7 +1364,10 @@ def archive_intelligence():
                     elif a<b:x["losses"]+=1
                 except: pass
         roster_meta={str(r.get("id")):r for r in (g.get("roster_players") or []) if r.get("id") is not None}
-        for pr in g.get("players") or []:
+        normalized=[]
+        for nr in STORE.player_stat_rows(str(g.get("id") or meta.get("id"))):
+            for cat,stats in (nr.get("categories") or {}).items(): normalized.append({"id":nr.get("id"),"name":nr.get("name"),"team":nr.get("team"),"position":nr.get("position"),"category":cat,"stats":stats})
+        for pr in (normalized or g.get("players") or []):
             rid=str(pr.get("id")) if pr.get("id") is not None else None
             rm=roster_meta.get(rid) or {}
             pteam=norm_team_abbr(pr.get("team") or rm.get("team"))
@@ -1473,7 +1567,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas55.js').exists() and (ROOT/'atlas55.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas57.js').exists() and (ROOT/'atlas57.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1533,6 +1627,9 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/archive":return self.sendj({"games":STORE.games(),"database":STORE.kind})
         if u.path=="/api/atlas":return self.sendj(atlas_overview())
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
+        if u.path=="/api/postgame-stats":
+            if (q.get("repair") or ["0"])[0] in ("1","true"): repair_player_stats_once(12)
+            return self.sendj(postgame_stats())
         if u.path=="/api/trends":
             return self.sendj(archive_trends((q.get("team") or [None])[0]))
         if u.path=="/api/insights":

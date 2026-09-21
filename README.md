@@ -1,4 +1,4 @@
-# ATLAS 73.0 — Refined Visual Intelligence
+# ATLAS 74.0 — Refined Visual Intelligence
 
 A visual overhaul built on the working ATLAS 67.1 data pipeline.
 
@@ -18,11 +18,14 @@ A visual overhaul built on the working ATLAS 67.1 data pipeline.
 Upload the extracted repository contents to GitHub/Render. Do not commit a local SQLite database or an OpenAI API key.
 
 
-## 73.0 refinement
+## 74.0 refinement
 Removed redundant visual layers from Home, Teams, and ATLAS AI so each metric has one primary home. Game, Game Graphs, and Weekly Recap retain supplemental visuals where they add distinct information. Homepage model-leader duplication was removed and spacing/hierarchy tightened.
 
 
-ATLAS 73.0 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
+ATLAS 74.0 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
 
 
-ATLAS 73.0 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
+ATLAS 74.0 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
+
+
+ATLAS 74.0 Connected Intelligence: contextual grounded OpenAI reasoning, player intelligence drawer, Compare Lab, live game pulse/game-day mode, position-aware impact ordering, team timeline, prediction receipts, confidence badges, favorite team, command search 2.0, and mobile refinements.

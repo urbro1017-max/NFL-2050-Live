@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="73.0"
-BUILD_NAME="ATLAS 73.0 REFINED VISUALS"
+VERSION="74.0"
+BUILD_NAME="ATLAS 74.0 REFINED VISUALS"
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1749,7 +1749,22 @@ def _atlas_ai_context(question):
     for t in teams:
         ab=str(t.get("abbr") or "").upper()
         if ab and (ab in q or str(t.get("name") or "").upper() in q): mentioned.append(t)
-    return {"atlas_model":{"teams":teams,"upcoming_games":games,"top_player_projections":fantasy,"mvp_signal":mvp,"diagnostics":snap.get("diagnostics") or {},"formula":snap.get("formula") or {}},"focus_teams":mentioned[:4],"rules":{"facts":"Only use supplied ATLAS data as current statistical facts.","missing":"If the data needed is absent, say ATLAS does not have it yet.","predictions":"Clearly label predictions/rankings as ATLAS model outputs, not facts.","no_invention":"Never invent injuries, news, plays, stats, contracts, odds, or Next Gen Stats."}}
+    focus_team_evidence=[]
+    for t in mentioned[:4]:
+        ab=norm_team_abbr(t.get("abbr"))
+        try:
+            focus_team_evidence.append({"team":ab,"trends":archive_trends(ab).get("games",[])[-5:],"insights":atlas_insights(ab).get("insights",[])})
+        except Exception: pass
+    focus_players=[]
+    try:
+        words=[x for x in re.split(r"[^A-Z]+",q) if len(x)>=4]
+        for row in STORE.player_stat_rows():
+            nm=str(row.get("name") or "").upper()
+            if nm and any(w in nm for w in words):
+                focus_players.append({"name":row.get("name"),"team":row.get("team"),"position":row.get("position"),"game_id":row.get("game_id"),"category":row.get("category"),"stats":row.get("stats")})
+                if len(focus_players)>=16: break
+    except Exception: pass
+    return {"atlas_model":{"teams":teams,"upcoming_games":games,"top_player_projections":fantasy,"mvp_signal":mvp,"diagnostics":snap.get("diagnostics") or {},"formula":snap.get("formula") or {}},"focus_teams":mentioned[:4],"focus_team_evidence":focus_team_evidence,"focus_player_rows":focus_players,"rules":{"facts":"Only use supplied ATLAS data as current statistical facts.","missing":"If the data needed is absent, say ATLAS does not have it yet.","predictions":"Clearly label predictions/rankings as ATLAS model outputs, not facts.","no_invention":"Never invent injuries, news, plays, stats, contracts, odds, or Next Gen Stats.","explain_evidence":"When useful, name the specific stored stats or ATLAS model fields that support the explanation."}}
 
 def atlas_ai_ask(question):
     question=str(question or "").strip()
@@ -1765,7 +1780,7 @@ def atlas_ai_ask(question):
       "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
       "max_output_tokens":900
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/73.0"},method="POST")
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.0"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
@@ -1821,7 +1836,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas682.js').exists() and (ROOT/'atlas682.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas740.js').exists() and (ROOT/'atlas740.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -1942,7 +1957,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas730.js","css":"atlas730.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas740.js","css":"atlas740.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

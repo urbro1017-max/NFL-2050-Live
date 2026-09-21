@@ -1,13 +1,12 @@
-# ATLAS 62.0 — AI Engine
+# ATLAS 64.0 — Neon Intelligence
 
-Production-focused AI performance rebuild.
+Render-ready NFL Football OS build.
 
-- `/api/projections` serves a precomputed in-memory snapshot instead of calculating models during the browser request.
-- AI calculations read only normalized `team_game_stats` and `player_game_stats`; no raw archive scan and no network request is allowed in the AI engine.
-- Snapshot rebuilds automatically every 60 seconds and at server startup.
-- Existing ATLAS 61 ingestion and per-team normalized stats pipeline is preserved.
-- `/api/build` reports the exact 62.0 frontend/backend asset identity.
-
-
-## 63.0 Intelligence Layer
-Set `OPENAI_API_KEY` in Render Environment to enable ATLAS Intelligence. Optional: `OPENAI_MODEL` (default `gpt-5.4`) and `OPENAI_TIMEOUT` (default 25 seconds). The key is server-side only and is never exposed to the browser. Core stats/projections continue working without the key.
+## 64 changes
+- persistent ATLAS AI chatbot
+- cached AI reads remain non-blocking
+- clearer neon power-ranking visualization
+- position boards expand to every stored position available
+- duplicated Teams DNA section removed
+- improved readability and neon visual hierarchy
+- normalized database remains source of truth

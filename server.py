@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="60.0"
-BUILD_NAME="ATLAS FOOTBALL OS"
+VERSION="61.0"
+BUILD_NAME="ATLAS 61.0 PRODUCTION RECOVERY"
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -587,7 +587,15 @@ def hydrate_final_package(gid, persist=True):
     candidate chooser and reads ESPN's completed-game summary directly so a stale
     play-by-play header cannot strand box-score rows outside the database."""
     gid=str(gid)
-    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}","ESPN_FINAL_SUMMARY")
+    fetch_errors=[]; raw=None; source="ESPN_FINAL_SUMMARY"
+    for url,label in [
+        (f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={gid}","ESPN_FINAL_SUMMARY"),
+        (f"https://cdn.espn.com/core/nfl/game?xhr=1&gameId={gid}","ESPN_FINAL_CDN")
+    ]:
+        try:
+            raw=fetch(url,label); source=label; break
+        except Exception as e: fetch_errors.append(f"{label}:{type(e).__name__}")
+    if raw is None: raise RuntimeError("final hydration failed: "+";".join(fetch_errors))
     d=_unwrap_espn(raw)
     comp=((d.get("header") or {}).get("competitions") or [{}])[0]
     status=(comp.get("status") or {}).get("type") or {}
@@ -605,12 +613,18 @@ def hydrate_final_package(gid, persist=True):
             labels=cat.get("labels") or []; cname=cat.get("name") or cat.get("label") or "stats"
             for row in cat.get("athletes") or []:
                 a=row.get("athlete") or {}; vals=row.get("stats") or []
-                players.append({"id":a.get("id"),"team":ab,"name":a.get("displayName") or a.get("fullName"),"position":((a.get("position") or {}).get("abbreviation")),"category":cname,"stats":dict(zip(labels,vals))})
+                pos=((a.get("position") or {}).get("abbreviation"))
+                if not pos:
+                    cl=str(cname).lower()
+                    if "pass" in cl: pos="QB"
+                    elif "kick" in cl and "return" not in cl: pos="K"
+                    elif "punt" in cl and "return" not in cl: pos="P"
+                players.append({"id":a.get("id"),"team":ab,"name":a.get("displayName") or a.get("fullName"),"position":pos,"category":cname,"stats":dict(zip(labels,vals))})
     # Schedule discovery is authoritative for Final. For direct hydration we also
     # accept a complete two-team box score, since ESPN occasionally lags type.state.
     complete=bool(status.get("completed") or str(status.get("state") or "").lower()=="post")
     old=STORE.game(gid) or {}
-    out={**old,"id":gid,"available":True,"status":status.get("shortDetail") or status.get("description") or old.get("status") or "Final","state":"post" if complete or old.get("completed") else status.get("state") or old.get("state") or "post","completed":bool(complete or old.get("completed")),"teams":teams or old.get("teams") or [],"team_stats":team_stats or old.get("team_stats") or {},"players":players or old.get("players") or [],"linescores":lines or old.get("linescores") or {},"source":"ESPN_FINAL_SUMMARY","fetched_at":int(time.time())}
+    out={**old,"id":gid,"available":True,"status":status.get("shortDetail") or status.get("description") or old.get("status") or "Final","state":"post" if complete or old.get("completed") else status.get("state") or old.get("state") or "post","completed":bool(complete or old.get("completed")),"teams":teams or old.get("teams") or [],"team_stats":team_stats or old.get("team_stats") or {},"players":players or old.get("players") or [],"linescores":lines or old.get("linescores") or {},"source":source,"fetch_errors":fetch_errors,"fetched_at":int(time.time())}
     if len(out.get("teams") or [])==2 and (out.get("completed") or _is_final_game(old)):
         out["completed"]=True; out["state"]="post"
         if persist: STORE.save(out)
@@ -1439,7 +1453,11 @@ def rebuild_data_core_once(limit=12,force_fetch=False):
         try:
             res=STORE.ingest_final(g); migrated+=1 if res.get("teams") else 0
         except Exception as e:errors.append(f"{gid}: migrate {type(e).__name__}")
-    missing=[gid for gid in finals if gid not in have]
+    skill={"QB","RB","FB","WR","TE"}
+    positioned={}
+    for r in STORE.player_stat_rows():
+        if str(r.get("position") or "").upper() in skill: positioned.setdefault(str(r.get("game_id")),0); positioned[str(r.get("game_id"))]+=1
+    missing=[gid for gid in finals if gid not in have or positioned.get(gid,0)==0]
     for gid in missing[:max(1,int(limit))]:
         try:
             fresh=hydrate_final_package(gid,True)
@@ -1459,7 +1477,11 @@ def unified_stats_health():
     for ab in TEAM_IDS:
         d=_archive_team_season_stats(ab)
         teams[ab]={"stored_games":d.get("stored_games",0),"stat_rows":len(d.get("stats") or [])}
-    return {"ok":True,"version":VERSION,"database":STORE.kind,"postgame":{k:pg.get(k) for k in ("final_games","games_with_player_stats","games_missing_player_stats","player_game_rows")},"pipeline":STORE.pipeline_rows(),"team_game_rows":len(STORE.team_game_rows()),"teams":teams,"teams_with_stored_games":sum(1 for x in teams.values() if x["stored_games"]),"updated":int(time.time())}
+    
+    pos_counts={}
+    for r in STORE.player_stat_rows():
+        pos=str(r.get("position") or "UNKNOWN").upper(); pos_counts[pos]=pos_counts.get(pos,0)+1
+    return {"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"postgame":{k:pg.get(k) for k in ("final_games","games_with_player_stats","games_missing_player_stats","player_game_rows")},"player_positions":pos_counts,"pipeline":STORE.pipeline_rows(),"team_game_rows":len(STORE.team_game_rows()),"teams":teams,"teams_with_stored_games":sum(1 for x in teams.values() if x["stored_games"]),"bootstrap":LAST.get("data_core_bootstrap"),"updated":int(time.time())}
 
 def postgame_stats():
     rows=STORE.player_stat_rows(); game_ids=STORE.player_stat_game_ids(); finals=[]
@@ -1744,8 +1766,10 @@ class H(SimpleHTTPRequestHandler):
     def end_headers(self):
         p=urlparse(self.path).path
         if not p.startswith("/api/"):
-            if p.endswith((".js",".css",".webmanifest")): self.send_header("Cache-Control","public, max-age=3600, stale-while-revalidate=86400")
-            elif p in ("/","/index.html"): self.send_header("Cache-Control","no-cache")
+            self.send_header("Cache-Control","no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma","no-cache")
+            self.send_header("Expires","0")
+            self.send_header("X-ATLAS-Build",VERSION)
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Referrer-Policy","no-referrer")
         self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")
@@ -1816,6 +1840,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas61.js","css":"atlas61.css","database":STORE.kind})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

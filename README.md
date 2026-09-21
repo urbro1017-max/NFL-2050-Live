@@ -1,12 +1,13 @@
-# ATLAS 61.0 — Production Recovery
+# ATLAS 62.0 — AI Engine
 
-Production-focused repair build.
+Production-focused AI performance rebuild.
 
-- Frontend build identity corrected to 61.0 (older packages accidentally still rendered 57.0).
-- Asset URLs changed to atlas61 + cache-busting query strings.
-- All frontend responses are no-store; stale service workers self-destruct and clear old caches.
-- `/api/build` proves which backend/frontend package is deployed.
-- Final-game hydration now tries ESPN site summary then ESPN CDN game package.
-- Data Core recovery rehydrates finals missing player rows OR skill-position identity.
-- Data Center exposes player position counts and bootstrap migration result.
-- Existing archive is preserved; normalized rows are idempotently upserted.
+- `/api/projections` serves a precomputed in-memory snapshot instead of calculating models during the browser request.
+- AI calculations read only normalized `team_game_stats` and `player_game_stats`; no raw archive scan and no network request is allowed in the AI engine.
+- Snapshot rebuilds automatically every 60 seconds and at server startup.
+- Existing ATLAS 61 ingestion and per-team normalized stats pipeline is preserved.
+- `/api/build` reports the exact 62.0 frontend/backend asset identity.
+
+
+## 63.0 Intelligence Layer
+Set `OPENAI_API_KEY` in Render Environment to enable ATLAS Intelligence. Optional: `OPENAI_MODEL` (default `gpt-5.4`) and `OPENAI_TIMEOUT` (default 25 seconds). The key is server-side only and is never exposed to the browser. Core stats/projections continue working without the key.

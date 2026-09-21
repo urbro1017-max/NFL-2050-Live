@@ -11,8 +11,11 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="61.0"
-BUILD_NAME="ATLAS 61.0 PRODUCTION RECOVERY"
+VERSION="63.0"
+BUILD_NAME="ATLAS 63.0 INTELLIGENCE LAYER"
+OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
+OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
+OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
 LIVE_CACHE={}
@@ -1614,80 +1617,169 @@ def _record_parts(record):
 
 def _clamp(v,lo,hi): return max(lo,min(hi,v))
 
-def atlas_projection_engine():
-    """ATLAS 56.1 projection engine: archive-first and non-blocking. Public feeds enrich from warm cache only."""
-    # Never make the AI screen wait on ESPN. The collector/league routes warm this cache independently.
-    lg=(LEAGUE_CACHE.get("value") or {})
-    standings=lg.get('standings') or []; power=lg.get('power') or []
-    archive=archive_intelligence() or {}; arch_teams=archive.get('teams') or []; arch_players=normalized_player_aggregates()
-    arch_by={norm_team_abbr(x.get('abbr')):x for x in arch_teams}
-    power_by={norm_team_abbr(x.get('abbr')):x for x in power}
-    standing_by={norm_team_abbr(x.get('abbr')):x for x in standings if x.get('abbr')}
-    teams=[]
-    trend_rows=(archive_trends(None).get('games') or [])
-    trends_by={}
-    for tr in trend_rows: trends_by.setdefault(norm_team_abbr(tr.get('team')),[]).append(tr)
-    # Always model all 32 clubs. Provider standings enrich the archive; they are not a single point of failure.
-    for base in team_index():
-        ab=norm_team_abbr(base.get('abbr')); r=standing_by.get(ab) or {}; ar=arch_by.get(ab) or {}
-        if r:
-            w,l,t=_record_parts(r.get('record')); diff=_num(r.get('diff')); record=r.get('record') or f'{int(w)}-{int(l)}'
-        else:
-            w=float(ar.get('wins') or 0); l=float(ar.get('losses') or 0); t=0.0
-            diff=float(ar.get('points') or 0)-float(ar.get('points_allowed') or 0); record=f'{int(w)}-{int(l)}'
-        gp=w+l+t
-        pct=(w+.5*t)/gp if gp else .5; dpg=diff/gp if gp else float(ar.get('diff_per_game') or 0)
-        recent=trends_by.get(ab) or []
-        recent_margin=sum(x.get('margin',0) for x in recent[-3:])/len(recent[-3:]) if recent else dpg
-        expected=_clamp(.55*pct+.25*(.5+_clamp(dpg,-14,14)/56)+.20*(.5+_clamp(recent_margin,-14,14)/56),.15,.85)
-        remaining=max(0,17-gp); projected=w+.5*t+remaining*expected
-        teams.append({'abbr':ab,'name':r.get('name') or base.get('name'),'logo':r.get('logo') or base.get('logo'),'record':record,'games_played':gp,'wins':w,'losses':l,'ties':t,'point_diff':round(diff,1),'diff_per_game':round(dpg,2),'recent_margin':round(recent_margin,2),'atlas_index':(power_by.get(ab) or {}).get('atlasIndex'),'strength':round(expected*100,1),'expected_win_rate':round(expected*100,1),'projected_wins':round(projected,1),'projected_losses':round(17-projected,1),'remaining':remaining,'record_source':'standings' if r else 'archive'})
-    teams.sort(key=lambda x:(-x['strength'],-x['projected_wins'],x['abbr']))
-    for i,x in enumerate(teams,1): x['projection_rank']=i
-    strength={x['abbr']:x for x in teams}
-    games=[]
-    try:
-        wk=(WEEK_CACHE.get('value') or {'games':[]})
-        for g in wk.get('games') or []:
-            if g.get('state')!='pre': continue
-            ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {}); home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})
-            aa=norm_team_abbr(away.get('abbr')); ha=norm_team_abbr(home.get('abbr')); av=strength.get(aa); hv=strength.get(ha)
-            if not av or not hv: continue
-            hp=_clamp(50+(hv['strength']-av['strength'])*.72+2,20,80); ap=100-hp
-            games.append({'id':g.get('id'),'date':g.get('date'),'away':aa,'home':ha,'away_prob':round(ap,1),'home_prob':round(hp,1),'pick':ha if hp>=ap else aa,'confidence':round(abs(hp-50)*2,1),'status':g.get('status')})
-    except Exception: pass
+AI_SNAPSHOT={"ts":0,"value":None,"building":False,"error":None,"duration_ms":None}
+AI_SNAPSHOT_LOCK=threading.Lock()
+AI_REFRESH_SECONDS=60
 
+TEAM_NAMES_AI={"ARI":"Arizona Cardinals","ATL":"Atlanta Falcons","BAL":"Baltimore Ravens","BUF":"Buffalo Bills","CAR":"Carolina Panthers","CHI":"Chicago Bears","CIN":"Cincinnati Bengals","CLE":"Cleveland Browns","DAL":"Dallas Cowboys","DEN":"Denver Broncos","DET":"Detroit Lions","GB":"Green Bay Packers","HOU":"Houston Texans","IND":"Indianapolis Colts","JAX":"Jacksonville Jaguars","KC":"Kansas City Chiefs","LV":"Las Vegas Raiders","LAC":"Los Angeles Chargers","LA":"Los Angeles Rams","MIA":"Miami Dolphins","MIN":"Minnesota Vikings","NE":"New England Patriots","NO":"New Orleans Saints","NYG":"New York Giants","NYJ":"New York Jets","PHI":"Philadelphia Eagles","PIT":"Pittsburgh Steelers","SF":"San Francisco 49ers","SEA":"Seattle Seahawks","TB":"Tampa Bay Buccaneers","TEN":"Tennessee Titans","WAS":"Washington Commanders"}
+
+def _ai_logo(ab):
+    x={"LA":"lar","WAS":"wsh"}.get(ab,ab.lower())
+    return f"https://a.espncdn.com/i/teamlogos/nfl/500/{x}.png"
+
+def atlas_projection_engine():
+    """ATLAS 62: normalized-DB-only model. No raw archive scans and no network calls."""
+    team_rows=STORE.team_game_rows()
+    player_rows=STORE.player_stat_rows()
+    # Aggregate team history in one pass from the normalized table.
+    agg={ab:{"games":0,"wins":0,"losses":0,"ties":0,"pf":0,"pa":0,"margins":[]} for ab in TEAM_IDS}
+    for r in team_rows:
+        ab=norm_team_abbr(r.get("team"))
+        if ab not in agg: continue
+        a=agg[ab]; a["games"]+=1; a["pf"]+=int(r.get("points_for") or 0); a["pa"]+=int(r.get("points_against") or 0)
+        res=r.get("result")
+        if res=="W": a["wins"]+=1
+        elif res=="L": a["losses"]+=1
+        else: a["ties"]+=1
+        a["margins"].append(int(r.get("points_for") or 0)-int(r.get("points_against") or 0))
+    teams=[]
+    for ab in TEAM_IDS:
+        a=agg[ab]; gp=a["games"]; w=a["wins"]; l=a["losses"]; t=a["ties"]
+        pct=(w+.5*t)/gp if gp else .5
+        dpg=(a["pf"]-a["pa"])/gp if gp else 0
+        recent=sum(a["margins"][-3:])/len(a["margins"][-3:]) if a["margins"] else dpg
+        expected=_clamp(.55*pct+.25*(.5+_clamp(dpg,-14,14)/56)+.20*(.5+_clamp(recent,-14,14)/56),.15,.85)
+        remaining=max(0,17-gp); projected=w+.5*t+remaining*expected
+        teams.append({"abbr":ab,"name":TEAM_NAMES_AI.get(ab,ab),"logo":_ai_logo(ab),"record":f"{w}-{l}"+(f"-{t}" if t else ""),"games_played":gp,"wins":w,"losses":l,"ties":t,"point_diff":a["pf"]-a["pa"],"diff_per_game":round(dpg,2),"recent_margin":round(recent,2),"strength":round(expected*100,1),"expected_win_rate":round(expected*100,1),"projected_wins":round(projected,1),"projected_losses":round(17-projected,1),"remaining":remaining,"record_source":"normalized_db"})
+    teams.sort(key=lambda x:(-x["strength"],-x["projected_wins"],x["abbr"]))
+    for i,x in enumerate(teams,1):x["projection_rank"]=i
+    strength={x["abbr"]:x for x in teams}
+
+    # Aggregate players from the already-loaded normalized rows. One DB query total.
+    pp={}
+    for row in player_rows:
+        key=str(row.get("id") or (str(row.get("name") or "").lower()+"|"+norm_team_abbr(row.get("team"))))
+        x=pp.setdefault(key,{"id":row.get("id"),"name":row.get("name"),"team":norm_team_abbr(row.get("team")),"position":str(row.get("position") or "").upper(),"games":set(),"categories":{}})
+        x["games"].add(str(row.get("game_id")))
+        if not x["position"] and row.get("position"):x["position"]=str(row.get("position")).upper()
+        for cat,stats in (row.get("categories") or {}).items():
+            dst=x["categories"].setdefault(str(cat),{})
+            for label,val in (stats or {}).items():
+                u=str(label).upper().strip()
+                if any(b in u for b in ("AVG","RATE","RTG","QBR","PCT","LONG","LNG","Y/A","Y/C")):continue
+                raw=str(val).replace(',','').replace('%','').strip()
+                if '/' in raw:continue
+                try:dst[label]=dst.get(label,0)+float(raw)
+                except:pass
     def nval(v):
         try:return float(str(v).replace(',','').replace('%','').strip().split('/')[0])
         except:return 0.0
     def pickstat(st, aliases):
-        norm=lambda z:re.sub(r'[^A-Z0-9]','',str(z).upper())
-        amap={norm(k):v for k,v in (st or {}).items()}
+        norm=lambda z:re.sub(r'[^A-Z0-9]','',str(z).upper()); amap={norm(k):v for k,v in (st or {}).items()}
         for a in aliases:
             if norm(a) in amap:return nval(amap[norm(a)])
         return 0.0
-    def catfind(cats, word):
+    def catfind(cats,word):
         for k,v in (cats or {}).items():
             if word in str(k).upper():return v or {}
         return {}
-    fantasy=[]; player_lines=0
-    for p in arch_players:
-        ng=max(1,int(p.get('games') or 0)); cats=p.get('categories') or {}; player_lines+=ng
-        pas=catfind(cats,'PASS'); rush=catfind(cats,'RUSH'); rec=catfind(cats,'RECEIV'); fum=catfind(cats,'FUMBL')
-        total=(pickstat(pas,['YDS','YARDS'])/25 + pickstat(pas,['TD','PASS TD'])*4 - pickstat(pas,['INT','INTERCEPTIONS'])*2 + pickstat(rush,['YDS','YARDS'])/10 + pickstat(rush,['TD','RUSH TD'])*6 + pickstat(rec,['REC','RECEPTIONS']) + pickstat(rec,['YDS','YARDS'])/10 + pickstat(rec,['TD','REC TD'])*6 - pickstat(fum,['LOST','FUM LOST'])*2)
-        if total==0: continue
+    fantasy=[]
+    for p in pp.values():
+        ng=max(1,len(p["games"])); cats=p["categories"]; pas=catfind(cats,'PASS'); rush=catfind(cats,'RUSH'); rec=catfind(cats,'RECEIV'); fum=catfind(cats,'FUMBL')
+        total=(pickstat(pas,['YDS','YARDS'])/25+pickstat(pas,['TD','PASS TD'])*4-pickstat(pas,['INT','INTERCEPTIONS'])*2+pickstat(rush,['YDS','YARDS'])/10+pickstat(rush,['TD','RUSH TD'])*6+pickstat(rec,['REC','RECEPTIONS'])+pickstat(rec,['YDS','YARDS'])/10+pickstat(rec,['TD','REC TD'])*6-pickstat(fum,['LOST','FUM LOST'])*2)
+        if total==0:continue
         fppg=total/ng
-        fantasy.append({'id':p.get('id'),'name':p.get('name'),'team':norm_team_abbr(p.get('team')),'position':str(p.get('position') or '').upper(),'games':ng,'season_fppg':round(fppg,1),'recent3_fppg':round(fppg,1),'projected_fantasy':round(fppg,1),'projection_basis':'ARCHIVE_AGGREGATE'})
-    fantasy.sort(key=lambda x:-x['projected_fantasy']); fantasy=fantasy[:120]
-    maxfp=max([x['projected_fantasy'] for x in fantasy] or [1]); mvp=[]
+        fantasy.append({"id":p["id"],"name":p["name"],"team":p["team"],"position":p["position"],"games":ng,"season_fppg":round(fppg,1),"recent3_fppg":round(fppg,1),"projected_fantasy":round(fppg,1),"projection_basis":"NORMALIZED_DB"})
+    fantasy.sort(key=lambda x:-x["projected_fantasy"]); fantasy=fantasy[:120]
+    maxfp=max([x["projected_fantasy"] for x in fantasy] or [1]); mvp=[]
     for x in fantasy:
-        if x.get('position') not in ('QB','RB','WR','TE'): continue
-        ts=(strength.get(x.get('team')) or {}).get('strength',50); score=70*(x['projected_fantasy']/maxfp)+30*(ts/100)
-        mvp.append({**x,'mvp_score':round(score,1),'team_strength':ts})
-    mvp.sort(key=lambda x:-x['mvp_score']); mvp=mvp[:20]
-    positions={p:len([x for x in fantasy if x.get('position')==p]) for p in ('QB','RB','WR','TE')}
-    diag={'database':STORE.kind,'persisted_games':len(STORE.games()),'archived_finals':int((archive.get('sample') or {}).get('final_games') or 0),'archived_players':len(arch_players),'player_game_lines':player_lines,'qualified_players':len(fantasy),'position_counts':positions,'archive_plays':int((archive.get('sample') or {}).get('plays') or 0),'archive_drives':int((archive.get('sample') or {}).get('drives') or 0)}
-    return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'diagnostics':diag,'formula':{'team_strength':'55% record + 25% bounded point differential/game + 20% recent archived margin','season_projection':'current wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like production calculated directly from aggregated final-game archive box scores','mvp':'70% normalized archive production + 30% projected team strength'},'source':'ESPN_STANDINGS+ATLAS_FINAL_ARCHIVE_DERIVED_MODEL','updated':int(time.time())}
+        if x["position"] not in ('QB','RB','WR','TE'):continue
+        ts=(strength.get(x["team"]) or {}).get('strength',50); score=70*(x['projected_fantasy']/maxfp)+30*(ts/100)
+        mvp.append({**x,"mvp_score":round(score,1),"team_strength":ts})
+    mvp.sort(key=lambda x:-x["mvp_score"]);mvp=mvp[:20]
+    positions={p:len([x for x in fantasy if x["position"]==p]) for p in ('QB','RB','WR','TE')}
+    # Upcoming forecasts use only already-warmed week cache; never network on AI request.
+    games=[]
+    for g in ((WEEK_CACHE.get('value') or {}).get('games') or []):
+        if g.get('state')!='pre':continue
+        ts=g.get('teams') or []; away=next((x for x in ts if x.get('side')=='away'),ts[0] if ts else {});home=next((x for x in ts if x.get('side')=='home'),ts[-1] if ts else {})
+        aa=norm_team_abbr(away.get('abbr'));ha=norm_team_abbr(home.get('abbr'));av=strength.get(aa);hv=strength.get(ha)
+        if not av or not hv:continue
+        hp=_clamp(50+(hv['strength']-av['strength'])*.72+2,20,80);ap=100-hp
+        games.append({'id':g.get('id'),'date':g.get('date'),'away':aa,'home':ha,'away_prob':round(ap,1),'home_prob':round(hp,1),'pick':ha if hp>=ap else aa,'confidence':round(abs(hp-50)*2,1),'status':g.get('status')})
+    return {'ok':True,'season':2026,'teams':teams,'games':games,'fantasy':fantasy,'mvp':mvp,'diagnostics':{'database':STORE.kind,'team_game_rows':len(team_rows),'player_game_rows':len(player_rows),'qualified_players':len(fantasy),'position_counts':positions},'formula':{'team_strength':'55% stored win rate + 25% bounded point differential/game + 20% recent stored margin','season_projection':'current stored wins + remaining games × ATLAS expected win rate; schedule-neutral baseline','game_probability':'relative ATLAS team strength + small home-field adjustment, bounded 20–80%','fantasy':'PPR-like production from normalized final-game player rows','mvp':'70% normalized production + 30% projected team strength'},'source':'ATLAS_NORMALIZED_DB_MODEL','updated':int(time.time())}
+
+def rebuild_ai_snapshot():
+    with AI_SNAPSHOT_LOCK:
+        if AI_SNAPSHOT['building']:return False
+        AI_SNAPSHOT['building']=True
+    t=time.perf_counter()
+    try:
+        v=atlas_projection_engine(); dur=round((time.perf_counter()-t)*1000,1)
+        with AI_SNAPSHOT_LOCK:AI_SNAPSHOT.update({'ts':time.time(),'value':v,'error':None,'duration_ms':dur,'building':False})
+        return True
+    except Exception as e:
+        with AI_SNAPSHOT_LOCK:AI_SNAPSHOT.update({'error':f'{type(e).__name__}: {e}','building':False})
+        return False
+
+def ai_snapshot_response():
+    with AI_SNAPSHOT_LOCK:
+        v=AI_SNAPSHOT.get('value'); ts=AI_SNAPSHOT.get('ts',0); building=AI_SNAPSHOT.get('building'); err=AI_SNAPSHOT.get('error'); dur=AI_SNAPSHOT.get('duration_ms')
+    if v:
+        out=dict(v);out['cache']={'age_seconds':round(max(0,time.time()-ts),1),'building':building,'last_build_ms':dur};return out
+    return {'ok':True,'warming':True,'teams':[],'games':[],'fantasy':[],'mvp':[],'diagnostics':{'database':STORE.kind},'source':'ATLAS_AI_SNAPSHOT_WARMING','updated':int(time.time()),'error':err}
+
+def ai_snapshot_worker():
+    while True:
+        rebuild_ai_snapshot()
+        time.sleep(AI_REFRESH_SECONDS)
+
+def atlas_ai_status():
+    return {"ok":True,"enabled":bool(OPENAI_API_KEY),"provider":"openai" if OPENAI_API_KEY else "atlas-local","model":OPENAI_MODEL if OPENAI_API_KEY else "ATLAS deterministic engine","role":"reasoning_layer","source_of_truth":"ATLAS normalized Postgres/database","version":VERSION}
+
+def _atlas_ai_context(question):
+    # Deliberately compact: the LLM reasons over ATLAS facts; it never becomes the stats database.
+    snap=ai_snapshot_response()
+    teams=(snap.get("teams") or [])[:32]
+    fantasy=(snap.get("fantasy") or [])[:40]
+    mvp=(snap.get("mvp") or [])[:20]
+    games=(snap.get("games") or [])[:20]
+    q=str(question or "").upper()
+    mentioned=[]
+    for t in teams:
+        ab=str(t.get("abbr") or "").upper()
+        if ab and (ab in q or str(t.get("name") or "").upper() in q): mentioned.append(t)
+    return {"atlas_model":{"teams":teams,"upcoming_games":games,"top_player_projections":fantasy,"mvp_signal":mvp,"diagnostics":snap.get("diagnostics") or {},"formula":snap.get("formula") or {}},"focus_teams":mentioned[:4],"rules":{"facts":"Only use supplied ATLAS data as current statistical facts.","missing":"If the data needed is absent, say ATLAS does not have it yet.","predictions":"Clearly label predictions/rankings as ATLAS model outputs, not facts.","no_invention":"Never invent injuries, news, plays, stats, contracts, odds, or Next Gen Stats."}}
+
+def atlas_ai_ask(question):
+    question=str(question or "").strip()
+    if not question:return {"ok":False,"error":"Ask ATLAS a football question."}
+    if len(question)>1200:return {"ok":False,"error":"Question is too long."}
+    ctx=_atlas_ai_context(question)
+    if not OPENAI_API_KEY:
+        return {"ok":False,"enabled":False,"provider":"atlas-local","error":"OpenAI reasoning is not configured. Add OPENAI_API_KEY in Render Environment. ATLAS statistics and deterministic projections remain available.","context_ready":True}
+    payload={
+      "model":OPENAI_MODEL,
+      "reasoning":{"effort":"low"},
+      "instructions":"You are ATLAS Intelligence, an NFL analytics assistant inside ATLAS. The ATLAS database and deterministic model are the source of truth. Explain football clearly and concisely. Never invent missing current facts. Distinguish measured database facts from ATLAS projections. Do not present sportsbook odds or betting advice. Return useful analysis grounded only in the supplied ATLAS context.",
+      "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
+      "max_output_tokens":900
+    }
+    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/63.0"},method="POST")
+    t=time.perf_counter()
+    try:
+        with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
+        textout=data.get("output_text") or ""
+        if not textout:
+            chunks=[]
+            for item in data.get("output") or []:
+                for c in item.get("content") or []:
+                    if c.get("type") in ("output_text","text") and c.get("text"):chunks.append(c["text"])
+            textout="\n".join(chunks)
+        if not textout:return {"ok":False,"error":"ATLAS Intelligence returned no text.","provider":"openai"}
+        return {"ok":True,"answer":textout,"provider":"openai","model":OPENAI_MODEL,"latency_ms":round((time.perf_counter()-t)*1000,1),"grounding":"ATLAS_NORMALIZED_DB+ATLAS_MODEL","updated":int(time.time())}
+    except Exception as e:
+        return {"ok":False,"error":f"ATLAS Intelligence unavailable: {type(e).__name__}","provider":"openai","model":OPENAI_MODEL}
 
 def atlas_search(q):
     q=str(q or '').strip().lower()
@@ -1777,6 +1869,16 @@ class H(SimpleHTTPRequestHandler):
         super().end_headers()
     def sendj(self,o,status=200):
         b=json.dumps(o).encode();self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+    def do_POST(self):
+        u=urlparse(self.path)
+        if u.path!="/api/ai/ask":return self.sendj({"ok":False,"error":"Not found"},404)
+        try:
+            n=min(int(self.headers.get("Content-Length","0") or 0),20000)
+            body=json.loads(self.rfile.read(n).decode() or "{}")
+        except Exception:return self.sendj({"ok":False,"error":"Invalid JSON"},400)
+        out=atlas_ai_ask(body.get("question"))
+        return self.sendj(out,200 if out.get("ok") else (503 if out.get("enabled") is False else 502))
+
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
         if u.path=="/api/games":return self.sendj(scoreboard((q.get("date") or [None])[0]))
@@ -1802,9 +1904,9 @@ class H(SimpleHTTPRequestHandler):
             return self.sendj(atlas_insights((q.get("team") or [None])[0]))
         if u.path=="/api/search":
             return self.sendj(atlas_search((q.get("q") or [""])[0]))
-        if u.path=="/api/projections":
-            try:return self.sendj(atlas_projection_engine())
-            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/projections":return self.sendj(ai_snapshot_response())
+        if u.path=="/api/ai/status":return self.sendj(atlas_ai_status())
+        if u.path=="/api/projections/rebuild":return self.sendj({"ok":False,"error":"AI snapshots rebuild automatically."},405)
         if u.path=="/api/archive-coverage":
             try:return self.sendj({"ok":True,**archive_coverage(),"backfill":LAST.get("backfill_stats") or {}})
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
@@ -1840,7 +1942,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas61.js","css":"atlas61.css","database":STORE.kind})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas63.js","css":"atlas63.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":
@@ -1859,5 +1961,7 @@ if __name__=="__main__":
         LAST["data_core_bootstrap"]=rebuild_data_core_once(64)
     except Exception as e:
         LAST["data_core_bootstrap"]={"error":f"{type(e).__name__}: {e}"}
+    rebuild_ai_snapshot()
+    threading.Thread(target=ai_snapshot_worker,daemon=True).start()
     threading.Thread(target=collector,daemon=True).start()
     ThreadingHTTPServer((HOST,PORT),H).serve_forever()

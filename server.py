@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-MLB-2.0"
-BUILD_NAME="ATLAS PWA MLB 2.0 + NFL 76.6"
+VERSION="ATLAS-PWA-MLB-2.1"
+BUILD_NAME="ATLAS PWA MLB 2.1 DATA FIX + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1999,6 +1999,7 @@ def legacy_live():
 
 # ---------------- ATLAS MLB 1.0 ----------------
 MLB_API="https://statsapi.mlb.com/api/v1"
+MLB_GAME_API="https://statsapi.mlb.com/api/v1.1"
 def mlb_get(path, params=None, timeout=12):
     url=MLB_API+path
     if params:
@@ -2021,23 +2022,28 @@ def mlb_schedule(date=None):
     return {"ok":True,"games":out,"count":len(out),"source":"MLB Stats API"}
 
 def mlb_teams():
-    raw=mlb_get("/teams",{"sportId":1,"activeStatus":"Y"})
+    raw=mlb_get("/teams",{"sportId":1,"hydrate":"division,league"})
     rows=[]
     for t in raw.get("teams",[]):
+        if t.get("sport",{}).get("id") not in (None,1): continue
         rows.append({"id":t.get("id"),"name":t.get("name"),"abbr":t.get("abbreviation"),"club":t.get("clubName"),
-                     "location":t.get("locationName"),"division":(t.get("division") or {}).get("name"),"league":(t.get("league") or {}).get("name")})
+                     "location":t.get("locationName"),"division":(t.get("division") or {}).get("name"),
+                     "divisionId":(t.get("division") or {}).get("id"),"league":(t.get("league") or {}).get("name"),
+                     "leagueId":(t.get("league") or {}).get("id")})
     return {"ok":True,"teams":rows,"count":len(rows),"source":"MLB Stats API"}
 
 def mlb_standings(season=None):
-    raw=mlb_get("/standings",{"leagueId":"103,104","season":season or time.gmtime().tm_year,"standingsTypes":"regularSeason","hydrate":"team"})
+    yr=int(season or time.gmtime().tm_year)
     recs=[]
-    for block in raw.get("records",[]):
-        div=(block.get("division") or {}).get("name")
-        for r in block.get("teamRecords",[]):
-            recs.append({"team":(r.get("team") or {}).get("name"),"teamId":(r.get("team") or {}).get("id"),"division":div,
-                         "wins":r.get("wins"),"losses":r.get("losses"),"pct":r.get("winningPercentage"),"gb":r.get("gamesBack"),
-                         "streak":(r.get("streak") or {}).get("streakCode"),"divisionRank":r.get("divisionRank")})
-    return {"ok":True,"standings":recs,"source":"MLB Stats API"}
+    for lid in (103,104):
+        raw=mlb_get("/standings",{"leagueId":lid,"season":yr,"standingsTypes":"regularSeason","hydrate":"team"})
+        for block in raw.get("records",[]):
+            div=(block.get("division") or {}).get("name")
+            for r in block.get("teamRecords",[]):
+                recs.append({"team":(r.get("team") or {}).get("name"),"teamId":(r.get("team") or {}).get("id"),"division":div,
+                             "wins":r.get("wins"),"losses":r.get("losses"),"pct":r.get("winningPercentage"),"gb":r.get("gamesBack"),
+                             "streak":(r.get("streak") or {}).get("streakCode"),"divisionRank":r.get("divisionRank")})
+    return {"ok":True,"season":yr,"standings":recs,"count":len(recs),"source":"MLB Stats API"}
 
 def mlb_roster(team, season=None):
     raw=mlb_get(f"/teams/{int(team)}/roster",{"rosterType":"active","season":season or time.gmtime().tm_year})
@@ -2049,18 +2055,26 @@ def mlb_roster(team, season=None):
 
 def mlb_team_stats(team, season=None):
     yr=season or time.gmtime().tm_year
-    out={"ok":True,"teamId":int(team),"season":int(yr),"groups":{},"source":"MLB Stats API"}
+    tid=int(team)
+    out={"ok":True,"teamId":tid,"season":int(yr),"groups":{},"source":"MLB Stats API"}
     for grp in ("hitting","pitching","fielding"):
         try:
-            raw=mlb_get(f"/teams/{int(team)}/stats",{"stats":"season","group":grp,"season":yr})
+            raw=mlb_get("/stats",{"stats":"season","group":grp,"season":yr,"sportIds":1,"teamId":tid})
             splits=[]
             for block in raw.get("stats",[]): splits += block.get("splits",[])
-            out["groups"][grp]=(splits[0].get("stat") if splits else {})
-        except Exception: out["groups"][grp]={}
+            # Filter to exact requested team when provider includes multiple splits.
+            match=None
+            for sp in splits:
+                if str((sp.get("team") or {}).get("id"))==str(tid): match=sp; break
+            out["groups"][grp]=((match or (splits[0] if splits else {})).get("stat") or {})
+        except Exception as e:
+            out["groups"][grp]={}
     return out
 
 def mlb_game(gid):
-    raw=mlb_get(f"/game/{int(gid)}/feed/live")
+    url=f"{MLB_GAME_API}/game/{int(gid)}/feed/live"
+    req=Request(url,headers={"User-Agent":"ATLAS-MLB/2.1","Accept":"application/json"})
+    with urlopen(req,timeout=15) as r: raw=json.loads(r.read().decode())
     gd=raw.get("gameData") or {}; live=raw.get("liveData") or {}; ls=live.get("linescore") or {}; box=live.get("boxscore") or {}
     teams=gd.get("teams") or {}
     def side(k):
@@ -2165,6 +2179,15 @@ class H(SimpleHTTPRequestHandler):
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
         # MLB ATLAS endpoints are intentionally separate from the NFL storage pipeline.
+        if u.path=="/api/mlb/diagnostics":
+            result={"ok":True,"version":"MLB-2.1-DATA-FIX","checks":{}}
+            for name,fn in (("teams",mlb_teams),("standings",mlb_standings),("schedule",mlb_schedule)):
+                try:
+                    x=fn(); rows=x.get(name) if name!="schedule" else x.get("games")
+                    result["checks"][name]={"ok":bool(x.get("ok")),"count":len(rows or []),"source":x.get("source")}
+                except Exception as e: result["checks"][name]={"ok":False,"count":0,"error":f"{type(e).__name__}: {e}"}
+            result["ok"]=all(x.get("ok") for x in result["checks"].values())
+            return self.sendj(result,200 if result["ok"] else 502)
         if u.path=="/api/mlb/schedule":
             try:return self.sendj(mlb_schedule((q.get("date") or [None])[0]))
             except Exception as e:return self.sendj({"ok":False,"games":[],"error":str(e)},502)

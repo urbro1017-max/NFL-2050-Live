@@ -7,13 +7,15 @@ from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from urllib.request import Request,urlopen
 from urllib.parse import urlparse,parse_qs, quote
 from pathlib import Path
+from html.parser import HTMLParser
+from html import unescape
 
 HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).parent/"app"
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-MLB-3.1"
-BUILD_NAME="ATLAS PWA MLB 3.1 REFINED + NFL 76.6"
+VERSION="ATLAS-PWA-5.0-UFC"
+BUILD_NAME="ATLAS PWA 5.0 UFC + MLB 4.0 + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1998,6 +2000,90 @@ def legacy_live():
     return out
 
 
+
+# ---------------- MLB PERSISTENT INTELLIGENCE ----------------
+class MLBStore:
+    def __init__(self):
+        self.pg=getattr(STORE,"pg",None)
+        with self.conn() as c:
+            if self.pg:
+                c.execute("""CREATE TABLE IF NOT EXISTS mlb_games(game_id TEXT PRIMARY KEY,payload JSONB,status TEXT,game_date TEXT,updated BIGINT);
+                CREATE TABLE IF NOT EXISTS mlb_team_game_stats(game_id TEXT NOT NULL,team_id TEXT NOT NULL,team TEXT,opponent TEXT,runs_for INTEGER,runs_against INTEGER,result TEXT,stats JSONB,game_date TEXT,updated BIGINT,PRIMARY KEY(game_id,team_id));
+                CREATE INDEX IF NOT EXISTS ix_mlb_tgs_team ON mlb_team_game_stats(team_id,game_date);
+                CREATE TABLE IF NOT EXISTS mlb_player_game_stats(game_id TEXT NOT NULL,player_id TEXT NOT NULL,name TEXT,team TEXT,kind TEXT,stats JSONB,game_date TEXT,updated BIGINT,PRIMARY KEY(game_id,player_id,kind));
+                CREATE INDEX IF NOT EXISTS ix_mlb_pgs_player ON mlb_player_game_stats(player_id,game_date);
+                CREATE TABLE IF NOT EXISTS mlb_model_snapshots(id BIGSERIAL PRIMARY KEY,ts BIGINT,payload JSONB);""")
+            else:
+                c.executescript("""CREATE TABLE IF NOT EXISTS mlb_games(game_id TEXT PRIMARY KEY,payload TEXT,status TEXT,game_date TEXT,updated INTEGER);
+                CREATE TABLE IF NOT EXISTS mlb_team_game_stats(game_id TEXT NOT NULL,team_id TEXT NOT NULL,team TEXT,opponent TEXT,runs_for INTEGER,runs_against INTEGER,result TEXT,stats TEXT,game_date TEXT,updated INTEGER,PRIMARY KEY(game_id,team_id));
+                CREATE INDEX IF NOT EXISTS ix_mlb_tgs_team ON mlb_team_game_stats(team_id,game_date);
+                CREATE TABLE IF NOT EXISTS mlb_player_game_stats(game_id TEXT NOT NULL,player_id TEXT NOT NULL,name TEXT,team TEXT,kind TEXT,stats TEXT,game_date TEXT,updated INTEGER,PRIMARY KEY(game_id,player_id,kind));
+                CREATE INDEX IF NOT EXISTS ix_mlb_pgs_player ON mlb_player_game_stats(player_id,game_date);
+                CREATE TABLE IF NOT EXISTS mlb_model_snapshots(id INTEGER PRIMARY KEY AUTOINCREMENT,ts INTEGER,payload TEXT);""")
+                c.commit()
+    def conn(self):
+        if self.pg:return self.pg.connect(DATABASE_URL,autocommit=True)
+        c=sqlite3.connect(DBFILE);c.row_factory=sqlite3.Row;return c
+    def _j(self,v): return v if self.pg else json.dumps(v)
+    def save_game(self,g):
+        if not g or not g.get("id"): return
+        gid=str(g["id"]); now=int(time.time()); status=str(g.get("status") or ""); gd=str(g.get("datetime") or "")[:10]
+        with self.conn() as c:
+            if self.pg:c.execute("""INSERT INTO mlb_games(game_id,payload,status,game_date,updated) VALUES(%s,%s,%s,%s,%s)
+                ON CONFLICT(game_id) DO UPDATE SET payload=EXCLUDED.payload,status=EXCLUDED.status,game_date=EXCLUDED.game_date,updated=EXCLUDED.updated""",(gid,json.dumps(g),status,gd,now))
+            else:c.execute("""INSERT INTO mlb_games(game_id,payload,status,game_date,updated) VALUES(?,?,?,?,?)
+                ON CONFLICT(game_id) DO UPDATE SET payload=excluded.payload,status=excluded.status,game_date=excluded.game_date,updated=excluded.updated""",(gid,json.dumps(g),status,gd,now))
+            final="final" in status.lower() or "game over" in status.lower()
+            if final:
+                for side,opp in (("away","home"),("home","away")):
+                    t=g.get(side) or {}; o=g.get(opp) or {}
+                    if not t.get("id"): continue
+                    rf=t.get("runs"); ra=o.get("runs"); result="W" if isinstance(rf,(int,float)) and isinstance(ra,(int,float)) and rf>ra else ("L" if isinstance(rf,(int,float)) and isinstance(ra,(int,float)) and rf<ra else "T")
+                    vals=(gid,str(t.get("id")),t.get("name"),o.get("name"),rf,ra,result,json.dumps({"hits":t.get("hits"),"errors":t.get("errors")}),gd,now)
+                    if self.pg:c.execute("""INSERT INTO mlb_team_game_stats(game_id,team_id,team,opponent,runs_for,runs_against,result,stats,game_date,updated) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT(game_id,team_id) DO UPDATE SET team=EXCLUDED.team,opponent=EXCLUDED.opponent,runs_for=EXCLUDED.runs_for,runs_against=EXCLUDED.runs_against,result=EXCLUDED.result,stats=EXCLUDED.stats,game_date=EXCLUDED.game_date,updated=EXCLUDED.updated""",vals)
+                    else:c.execute("""INSERT INTO mlb_team_game_stats(game_id,team_id,team,opponent,runs_for,runs_against,result,stats,game_date,updated) VALUES(?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(game_id,team_id) DO UPDATE SET team=excluded.team,opponent=excluded.opponent,runs_for=excluded.runs_for,runs_against=excluded.runs_against,result=excluded.result,stats=excluded.stats,game_date=excluded.game_date,updated=excluded.updated""",vals)
+                for kind,key in (("hitting","hitters"),("pitching","pitchers")):
+                    for p in g.get(key) or []:
+                        if not p.get("id"): continue
+                        vals=(gid,str(p["id"]),p.get("name"),p.get("team"),kind,json.dumps(p.get("stats") or {}),gd,now)
+                        if self.pg:c.execute("""INSERT INTO mlb_player_game_stats(game_id,player_id,name,team,kind,stats,game_date,updated) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT(game_id,player_id,kind) DO UPDATE SET name=EXCLUDED.name,team=EXCLUDED.team,stats=EXCLUDED.stats,game_date=EXCLUDED.game_date,updated=EXCLUDED.updated""",vals)
+                        else:c.execute("""INSERT INTO mlb_player_game_stats(game_id,player_id,name,team,kind,stats,game_date,updated) VALUES(?,?,?,?,?,?,?,?)
+                            ON CONFLICT(game_id,player_id,kind) DO UPDATE SET name=excluded.name,team=excluded.team,stats=excluded.stats,game_date=excluded.game_date,updated=excluded.updated""",vals)
+            if not self.pg:c.commit()
+    def team_history(self,tid,limit=30):
+        q="SELECT * FROM mlb_team_game_stats WHERE team_id="+("%s" if self.pg else "?")+" ORDER BY game_date DESC,updated DESC LIMIT "+str(int(limit))
+        with self.conn() as c: rows=c.execute(q,(str(tid),)).fetchall()
+        return [dict(x) for x in rows]
+    def player_history(self,pid,limit=30):
+        q="SELECT * FROM mlb_player_game_stats WHERE player_id="+("%s" if self.pg else "?")+" ORDER BY game_date DESC,updated DESC LIMIT "+str(int(limit))
+        with self.conn() as c: rows=c.execute(q,(str(pid),)).fetchall()
+        out=[]
+        for x in rows:
+            d=dict(x); st=d.get("stats")
+            if isinstance(st,str):
+                try:d["stats"]=json.loads(st)
+                except:d["stats"]={}
+            out.append(d)
+        return out
+    def recent_games(self,limit=80):
+        with self.conn() as c: rows=c.execute("SELECT * FROM mlb_games ORDER BY updated DESC LIMIT "+str(int(limit))).fetchall()
+        out=[]
+        for x in rows:
+            d=dict(x); p=d.get("payload")
+            if isinstance(p,str):
+                try:d["payload"]=json.loads(p)
+                except:d["payload"]={}
+            out.append(d)
+        return out
+    def counts(self):
+        with self.conn() as c:
+            def one(q): return int(c.execute(q).fetchone()[0])
+            return {"games":one("SELECT COUNT(*) FROM mlb_games"),"team_rows":one("SELECT COUNT(*) FROM mlb_team_game_stats"),"player_rows":one("SELECT COUNT(*) FROM mlb_player_game_stats")}
+MLB_STORE=MLBStore()
+
 # ---------------- ATLAS MLB 1.0 ----------------
 MLB_API="https://statsapi.mlb.com/api/v1"
 MLB_GAME_API="https://statsapi.mlb.com/api/v1.1"
@@ -2096,12 +2182,15 @@ def mlb_game(gid):
             person=p.get("person") or {}; st=p.get("stats") or {}
             if st.get("batting"): hitters.append({"id":person.get("id"),"name":person.get("fullName"),"team":side(k)["abbr"],"stats":st["batting"]})
             if st.get("pitching"): pitchers.append({"id":person.get("id"),"name":person.get("fullName"),"team":side(k)["abbr"],"stats":st["pitching"]})
-    return {"ok":True,"id":int(gid),"status":(gd.get("status") or {}).get("detailedState"),"datetime":(gd.get("datetime") or {}).get("dateTime"),
+    result={"ok":True,"id":int(gid),"status":(gd.get("status") or {}).get("detailedState"),"datetime":(gd.get("datetime") or {}).get("dateTime"),
             "venue":(gd.get("venue") or {}).get("name"),"away":side("away"),"home":side("home"),
             "inning":ls.get("currentInning"),"inningOrdinal":ls.get("currentInningOrdinal"),"inningState":ls.get("inningState"),
             "balls":ls.get("balls"),"strikes":ls.get("strikes"),"outs":ls.get("outs"),"bases":bases,
             "batter":(offense.get("batter") or {}).get("fullName"),"pitcher":(defense.get("pitcher") or {}).get("fullName"),
             "innings":ls.get("innings") or [],"plays":plays,"hitters":hitters,"pitchers":pitchers,"source":"MLB Stats API"}
+    try: MLB_STORE.save_game(result)
+    except Exception as e: result["archive_warning"]=str(e)
+    return result
 
 def mlb_leaders(season=None):
     yr=season or time.gmtime().tm_year
@@ -2149,7 +2238,217 @@ def mlb_schedule_range(start=None,end=None):
         days.append({"date":d.get("date"),"games":day})
     return {"ok":True,"days":days,"source":"MLB Stats API"}
 
+
+def mlb_archive_backfill(days=7,limit=40):
+    end=datetime.now().date(); start=end.fromordinal(end.toordinal()-max(1,min(int(days),30))+1)
+    sch=mlb_schedule_range(str(start),str(end)); done=0; errors=[]
+    finals=[g for d in sch.get("days",[]) for g in d.get("games",[]) if str(g.get("abstract")).lower()=="final"]
+    for g in finals[:max(1,min(int(limit),100))]:
+        try: mlb_game(g["id"]); done+=1
+        except Exception as e: errors.append({"id":g.get("id"),"error":str(e)[:120]})
+    return {"ok":True,"hydrated":done,"finals_seen":len(finals),"errors":errors[:8],"counts":MLB_STORE.counts()}
+
+def mlb_team_trends(tid):
+    rows=MLB_STORE.team_history(tid,30)
+    recent=rows[:10]
+    if not rows:return {"ok":True,"teamId":str(tid),"games":[],"summary":None}
+    wins=sum(1 for r in recent if r.get("result")=="W"); rf=[r.get("runs_for") for r in recent if isinstance(r.get("runs_for"),int)]; ra=[r.get("runs_against") for r in recent if isinstance(r.get("runs_against"),int)]
+    return {"ok":True,"teamId":str(tid),"games":recent,"summary":{"games":len(recent),"wins":wins,"losses":len(recent)-wins,"avg_runs":round(sum(rf)/len(rf),2) if rf else None,"avg_allowed":round(sum(ra)/len(ra),2) if ra else None,"run_diff":sum(rf)-sum(ra) if rf and ra else None}}
+
+def mlb_player_history(pid):
+    return {"ok":True,"playerId":str(pid),"games":MLB_STORE.player_history(pid,30)}
+
+def mlb_power():
+    st=mlb_standings().get("standings",[])
+    rows=[]
+    for x in st:
+        hist=MLB_STORE.team_history(x.get("teamId"),10); recent=hist[:10]
+        pct=float(x.get("pct") or 0); rd=sum((r.get("runs_for") or 0)-(r.get("runs_against") or 0) for r in recent)
+        recent_pct=(sum(1 for r in recent if r.get("result")=="W")/len(recent)) if recent else pct
+        rd_component=max(-1,min(1,rd/max(10,len(recent)*3))) if recent else 0
+        strength=round(100*(.60*pct+.30*recent_pct+.10*((rd_component+1)/2)),1)
+        rows.append({"team":x.get("team"),"teamId":x.get("teamId"),"record":f"{x.get('wins')}-{x.get('losses')}","strength":strength,"recent_games":len(recent),"recent_wins":sum(1 for r in recent if r.get("result")=="W"),"run_diff_recent":rd})
+    rows.sort(key=lambda x:x["strength"],reverse=True)
+    for i,x in enumerate(rows):x["rank"]=i+1
+    return {"ok":True,"teams":rows,"model":"ATLAS MLB strength: 60% season win pct, 30% archived recent win pct, 10% bounded recent run differential","source":"MLB standings + ATLAS archived completed games"}
+
+def mlb_search(q):
+    q=str(q or "").strip().lower()
+    if len(q)<2:return {"ok":True,"results":[]}
+    out=[]
+    for t in mlb_teams().get("teams",[]):
+        if q in str(t.get("name","")).lower() or q in str(t.get("abbr","")).lower():out.append({"type":"team","id":t["id"],"name":t["name"],"detail":t.get("division")})
+    # Search current active rosters only as needed; stop after useful matches.
+    for t in mlb_teams().get("teams",[]):
+        if len(out)>=18:break
+        try:
+            for p in mlb_roster(t["id"]).get("players",[]):
+                if q in str(p.get("name","")).lower():out.append({"type":"player","id":p["id"],"name":p["name"],"detail":t["name"]+" · "+str(p.get("position") or "")})
+        except: pass
+    return {"ok":True,"results":out[:20]}
+
+def mlb_compare(player_ids):
+    rows=[]
+    for pid in [x for x in str(player_ids or "").split(",") if x][:4]:
+        try:
+            p=mlb_player(pid).get("player") or {}; p["history"]=MLB_STORE.player_history(pid,10); rows.append(p)
+        except: pass
+    return {"ok":True,"players":rows}
+
+def mlb_daily():
+    games=mlb_schedule().get("games",[]); leaders=mlb_leaders().get("leaders",{}); power=mlb_power().get("teams",[])[:5]
+    return {"ok":True,"date":str(datetime.now().date()),"games":games,"power":power,"leaders":{k:(v[:3] if isinstance(v,list) else []) for k,v in leaders.items()},"archive":MLB_STORE.counts(),"source":"MLB Stats API + ATLAS archive"}
+
+def mlb_ai_context(question):
+    return {"question":str(question or "")[:800],"daily":mlb_daily(),"power":mlb_power(),"archive_counts":MLB_STORE.counts(),
+            "rules":["Use only supplied MLB/ATLAS evidence.","Do not invent Statcast, injuries, transactions, projections, or probabilities.","ATLAS strength is a model output, not an official MLB ranking.","No betting advice."]}
+
+def mlb_ai_ask(question):
+    q=str(question or "").strip()
+    if not q:return {"ok":False,"error":"Ask a baseball question."}
+    ctx=mlb_ai_context(q)
+    if not GEMINI_API_KEY:return {"ok":True,"enabled":False,"answer":"Gemini is not enabled. ATLAS verified data is available in the surrounding panels.","context":ctx}
+    try:
+        url=f"https://generativelanguage.googleapis.com/v1beta/models/{quote(GEMINI_MODEL)}:generateContent?key={quote(GEMINI_API_KEY)}"
+        body=json.dumps({"contents":[{"parts":[{"text":"You are ATLAS MLB, a concise baseball analytics assistant. Ground every factual claim in the supplied JSON. Clearly label ATLAS model outputs. Never invent missing data and do not provide betting advice.\n\nEVIDENCE:\n"+json.dumps(ctx,separators=(',',':'))+"\n\nQUESTION:\n"+q}]}]}).encode()
+        req=Request(url,data=body,headers={"Content-Type":"application/json","User-Agent":"ATLAS-MLB/4.0"},method="POST")
+        with urlopen(req,timeout=OPENAI_TIMEOUT) as r: raw=json.loads(r.read().decode())
+        ans=((raw.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        text=" ".join(str(x.get("text") or "") for x in ans).strip()
+        return {"ok":True,"enabled":True,"answer":text or "No grounded answer returned.","context":{"archive_counts":ctx["archive_counts"]}}
+    except Exception as e:return {"ok":False,"enabled":True,"error":str(e)}
+
 # -------------- END ATLAS MLB 1.0 --------------
+
+
+# ---------------- UFC ATLAS 1.0 ----------------
+UFCSTATS="http://ufcstats.com"
+UFC_CACHE={}; UFC_CACHE_LOCK=threading.Lock()
+
+def ufc_html(url,ttl=900):
+    now=time.time()
+    with UFC_CACHE_LOCK:
+        hit=UFC_CACHE.get(url)
+        if hit and now-hit[0]<ttl:return hit[1]
+    req=Request(url,headers={"User-Agent":"Mozilla/5.0 (compatible; ATLAS-UFC/1.0)","Accept":"text/html,application/xhtml+xml","Referer":"http://ufcstats.com/"})
+    with urlopen(req,timeout=15) as r: body=r.read().decode("utf-8","ignore")
+    with UFC_CACHE_LOCK:UFC_CACHE[url]=(now,body)
+    return body
+
+def _clean_html(x):
+    return re.sub(r"\s+"," ",unescape(re.sub(r"<[^>]+>"," ",x or ""))).strip()
+
+def _hrefs(html,contains):
+    return list(dict.fromkeys(re.findall(r'href=["\']([^"\']*'+re.escape(contains)+r'[^"\']*)["\']',html,re.I)))
+
+def ufc_events():
+    h=ufc_html(UFCSTATS+"/statistics/events/completed?page=all",600)
+    rows=[]
+    for m in re.finditer(r'<tr[^>]*class="[^"]*b-statistics__table-row[^"]*"[^>]*>(.*?)</tr>',h,re.S|re.I):
+        row=m.group(1); href=re.search(r'href=["\']([^"\']*event-details[^"\']*)',row,re.I)
+        if not href:continue
+        name_m=re.search(r'<a[^>]*>(.*?)</a>',row,re.S|re.I)
+        date_m=re.search(r'<span[^>]*class="[^"]*b-statistics__date[^"]*"[^>]*>(.*?)</span>',row,re.S|re.I)
+        cells=re.findall(r'<td[^>]*>(.*?)</td>',row,re.S|re.I)
+        txt=[_clean_html(x) for x in cells]
+        name=_clean_html(name_m.group(1)) if name_m else (txt[0] if txt else "")
+        date=_clean_html(date_m.group(1)) if date_m else ""
+        location=txt[-1] if txt else ""
+        rows.append({"id":href.group(1).rstrip("/").split("/")[-1],"name":name,"date":date,"location":location,"url":href.group(1)})
+    return {"ok":True,"events":rows,"count":len(rows),"source":"UFCStats"}
+
+def ufc_event(eid):
+    eid=re.sub(r"[^a-fA-F0-9-]","",str(eid or ""))
+    if not eid:return {"ok":False,"error":"Invalid event id"}
+    h=ufc_html(UFCSTATS+"/event-details/"+eid,300)
+    title_m=re.search(r'<span[^>]*class="[^"]*b-content__title-highlight[^"]*"[^>]*>(.*?)</span>',h,re.S|re.I)
+    date_m=re.search(r'DATE:\s*</i>\s*([^<]+)',h,re.I)
+    loc_m=re.search(r'LOCATION:\s*</i>\s*([^<]+)',h,re.I)
+    fights=[]
+    for tr in re.findall(r'<tr[^>]*class="[^"]*b-fight-details__table-row[^"]*"[^>]*data-link=["\']([^"\']+)["\'][^>]*>(.*?)</tr>',h,re.S|re.I):
+        link,row=tr
+        names=[_clean_html(x) for x in re.findall(r'<p[^>]*class="[^"]*b-fight-details__table-text[^"]*l-page_align_left[^"]*"[^>]*>\s*<a[^>]*>(.*?)</a>',row,re.S|re.I)]
+        if len(names)<2:
+            names=[_clean_html(x) for x in re.findall(r'<a[^>]*href=["\'][^"\']*fighter-details[^"\']*["\'][^>]*>(.*?)</a>',row,re.S|re.I)]
+        cells=[_clean_html(x) for x in re.findall(r'<td[^>]*>(.*?)</td>',row,re.S|re.I)]
+        fid=link.rstrip("/").split("/")[-1]
+        fights.append({"id":fid,"fighter1":names[0] if len(names)>0 else None,"fighter2":names[1] if len(names)>1 else None,
+                       "result":cells[0] if cells else None,"weight_class":cells[6] if len(cells)>6 else None,
+                       "method":cells[7] if len(cells)>7 else None,"round":cells[8] if len(cells)>8 else None,"time":cells[9] if len(cells)>9 else None})
+    return {"ok":True,"id":eid,"name":_clean_html(title_m.group(1)) if title_m else "UFC Event","date":_clean_html(date_m.group(1)) if date_m else None,
+            "location":_clean_html(loc_m.group(1)) if loc_m else None,"fights":fights,"source":"UFCStats"}
+
+def ufc_fighters(letter="a"):
+    letter=(str(letter or "a").lower()[:1] if str(letter or "")[:1].isalpha() else "a")
+    h=ufc_html(UFCSTATS+"/statistics/fighters?char="+letter+"&page=all",21600)
+    out=[]
+    for tr in re.findall(r'<tr[^>]*class="[^"]*b-statistics__table-row[^"]*"[^>]*>(.*?)</tr>',h,re.S|re.I):
+        href=re.search(r'href=["\']([^"\']*fighter-details[^"\']*)',tr,re.I)
+        if not href:continue
+        cells=[_clean_html(x) for x in re.findall(r'<td[^>]*>(.*?)</td>',tr,re.S|re.I)]
+        links=[_clean_html(x) for x in re.findall(r'<a[^>]*>(.*?)</a>',tr,re.S|re.I)]
+        if len(links)<2:continue
+        out.append({"id":href.group(1).rstrip("/").split("/")[-1],"first":links[0],"last":links[1],"name":(links[0]+" "+links[1]).strip(),
+                    "nickname":links[2] if len(links)>2 else "","height":cells[3] if len(cells)>3 else None,"weight":cells[4] if len(cells)>4 else None,
+                    "reach":cells[5] if len(cells)>5 else None,"stance":cells[6] if len(cells)>6 else None,
+                    "wins":cells[7] if len(cells)>7 else None,"losses":cells[8] if len(cells)>8 else None,"draws":cells[9] if len(cells)>9 else None})
+    return {"ok":True,"fighters":out,"count":len(out),"source":"UFCStats"}
+
+def ufc_fighter(fid):
+    fid=re.sub(r"[^a-fA-F0-9]","",str(fid or ""))
+    if not fid:return {"ok":False,"error":"Invalid fighter id"}
+    h=ufc_html(UFCSTATS+"/fighter-details/"+fid,3600)
+    title=re.search(r'<span[^>]*class="[^"]*b-content__title-highlight[^"]*"[^>]*>(.*?)</span>',h,re.S|re.I)
+    nick=re.search(r'<p[^>]*class="[^"]*b-content__Nickname[^"]*"[^>]*>(.*?)</p>',h,re.S|re.I)
+    record=re.search(r'Record:\s*([^<]+)',h,re.I)
+    def item(label):
+        m=re.search(re.escape(label)+r'\s*</i>\s*([^<]+)',h,re.I);return _clean_html(m.group(1)) if m else None
+    def stat(label):
+        m=re.search(re.escape(label)+r'\s*</i>\s*([^<]+)',h,re.I);return _clean_html(m.group(1)) if m else None
+    fights=[]
+    for tr in re.findall(r'<tr[^>]*class="[^"]*b-fight-details__table-row[^"]*"[^>]*>(.*?)</tr>',h,re.S|re.I):
+        cells=[_clean_html(x) for x in re.findall(r'<td[^>]*>(.*?)</td>',tr,re.S|re.I)]
+        names=[_clean_html(x) for x in re.findall(r'<a[^>]*href=["\'][^"\']*fighter-details[^"\']*["\'][^>]*>(.*?)</a>',tr,re.S|re.I)]
+        ev=[_clean_html(x) for x in re.findall(r'<a[^>]*href=["\'][^"\']*event-details[^"\']*["\'][^>]*>(.*?)</a>',tr,re.S|re.I)]
+        if cells:fights.append({"result":cells[0],"fighters":names[:2],"event":ev[0] if ev else None,"method":cells[7] if len(cells)>7 else None,"round":cells[8] if len(cells)>8 else None,"time":cells[9] if len(cells)>9 else None})
+    return {"ok":True,"fighter":{"id":fid,"name":_clean_html(title.group(1)) if title else "Fighter","nickname":_clean_html(nick.group(1)) if nick else "",
+        "record":_clean_html(record.group(1)) if record else None,"height":item("HEIGHT:"),"weight":item("WEIGHT:"),"reach":item("REACH:"),"stance":item("STANCE:"),"dob":item("DOB:"),
+        "stats":{"SLpM":stat("SLpM:"),"StrAcc":stat("Str. Acc.:"),"SApM":stat("SApM:"),"StrDef":stat("Str. Def:"),"TDAvg":stat("TD Avg.:"),"TDAcc":stat("TD Acc.:"),"TDDef":stat("TD Def.:"),"SubAvg":stat("Sub. Avg.:")},
+        "fights":fights[:20]},"source":"UFCStats"}
+
+def ufc_fight(fid):
+    fid=re.sub(r"[^a-fA-F0-9]","",str(fid or ""))
+    if not fid:return {"ok":False,"error":"Invalid fight id"}
+    h=ufc_html(UFCSTATS+"/fight-details/"+fid,3600)
+    names=[_clean_html(x) for x in re.findall(r'<a[^>]*href=["\'][^"\']*fighter-details[^"\']*["\'][^>]*>(.*?)</a>',h,re.S|re.I)]
+    # Keep round totals as verified display text rather than guessing schema.
+    rounds=[]
+    for tb in re.findall(r'<tbody[^>]*>(.*?)</tbody>',h,re.S|re.I):
+        for tr in re.findall(r'<tr[^>]*>(.*?)</tr>',tb,re.S|re.I):
+            cells=[_clean_html(x) for x in re.findall(r'<td[^>]*>(.*?)</td>',tr,re.S|re.I)]
+            if len(cells)>=2:rounds.append(cells)
+    return {"ok":True,"id":fid,"fighters":names[:2],"round_rows":rounds[:20],"source":"UFCStats","note":"Rows are preserved from UFCStats; ATLAS does not infer missing values."}
+
+def ufc_search(q):
+    q=str(q or "").strip().lower()
+    if len(q)<2:return {"ok":True,"results":[]}
+    letters={q[0]} if q[0].isalpha() else set("abcdefghijklmnopqrstuvwxyz")
+    out=[]
+    for ch in letters:
+        for f in ufc_fighters(ch).get("fighters",[]):
+            if q in (f.get("name","")+" "+f.get("nickname","")).lower():
+                out.append(f)
+    return {"ok":True,"results":out[:30],"source":"UFCStats"}
+
+def ufc_diagnostics():
+    checks={}
+    for name,fn in (("events",ufc_events),("fighters_a",lambda:ufc_fighters("a"))):
+        try:
+            x=fn(); arr=x.get("events") if name=="events" else x.get("fighters")
+            checks[name]={"ok":bool(x.get("ok")) and len(arr or [])>0,"count":len(arr or []),"source":x.get("source")}
+        except Exception as e:checks[name]={"ok":False,"count":0,"error":f"{type(e).__name__}: {e}"}
+    return {"ok":all(x["ok"] for x in checks.values()),"version":"UFC-1.0","checks":checks,"principles":["Verified UFCStats data only","No betting features","No fabricated live stats","Missing data remains missing"]}
+# -------------- END UFC ATLAS 1.0 --------------
 
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
@@ -2169,17 +2468,61 @@ class H(SimpleHTTPRequestHandler):
         b=json.dumps(o).encode();self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_POST(self):
         u=urlparse(self.path)
-        if u.path!="/api/ai/ask":return self.sendj({"ok":False,"error":"Not found"},404)
+        if u.path not in ("/api/ai/ask","/api/mlb/ai/ask"):return self.sendj({"ok":False,"error":"Not found"},404)
         try:
             n=min(int(self.headers.get("Content-Length","0") or 0),20000)
             body=json.loads(self.rfile.read(n).decode() or "{}")
         except Exception:return self.sendj({"ok":False,"error":"Invalid JSON"},400)
-        out=atlas_ai_ask(body.get("question"))
+        out=mlb_ai_ask(body.get("question")) if u.path=="/api/mlb/ai/ask" else atlas_ai_ask(body.get("question"))
         return self.sendj(out,200 if out.get("ok") else (503 if out.get("enabled") is False else 502))
 
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
+        # UFC ATLAS endpoints — statistical data is isolated from NFL/MLB pipelines.
+        if u.path=="/api/ufc/events":
+            try:return self.sendj(ufc_events())
+            except Exception as e:return self.sendj({"ok":False,"events":[],"error":str(e)},502)
+        if u.path=="/api/ufc/event":
+            try:return self.sendj(ufc_event((q.get("id") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"fights":[],"error":str(e)},502)
+        if u.path=="/api/ufc/fighters":
+            try:return self.sendj(ufc_fighters((q.get("letter") or ["a"])[0]))
+            except Exception as e:return self.sendj({"ok":False,"fighters":[],"error":str(e)},502)
+        if u.path=="/api/ufc/fighter":
+            try:return self.sendj(ufc_fighter((q.get("id") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"fighter":None,"error":str(e)},502)
+        if u.path=="/api/ufc/fight":
+            try:return self.sendj(ufc_fight((q.get("id") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/ufc/search":
+            try:return self.sendj(ufc_search((q.get("q") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"results":[],"error":str(e)},502)
+        if u.path=="/api/ufc/diagnostics":
+            x=ufc_diagnostics();return self.sendj(x,200 if x.get("ok") else 502)
         # MLB ATLAS endpoints are intentionally separate from the NFL storage pipeline.
+        if u.path=="/api/mlb/archive":
+            return self.sendj({"ok":True,"games":MLB_STORE.recent_games(80),"counts":MLB_STORE.counts()})
+        if u.path=="/api/mlb/backfill":
+            try:return self.sendj(mlb_archive_backfill((q.get("days") or [7])[0],(q.get("limit") or [40])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/mlb/trends":
+            try:return self.sendj(mlb_team_trends((q.get("team") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/mlb/player-history":
+            try:return self.sendj(mlb_player_history((q.get("id") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/mlb/power":
+            try:return self.sendj(mlb_power())
+            except Exception as e:return self.sendj({"ok":False,"teams":[],"error":str(e)},502)
+        if u.path=="/api/mlb/search":
+            try:return self.sendj(mlb_search((q.get("q") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"results":[],"error":str(e)},502)
+        if u.path=="/api/mlb/compare":
+            try:return self.sendj(mlb_compare((q.get("ids") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"players":[],"error":str(e)},502)
+        if u.path=="/api/mlb/daily":
+            try:return self.sendj(mlb_daily())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/mlb/diagnostics":
             result={"ok":True,"version":"MLB-2.1-DATA-FIX","checks":{}}
             for name,fn in (("teams",mlb_teams),("standings",mlb_standings),("schedule",mlb_schedule)):

@@ -14,8 +14,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-5.0-UFC"
-BUILD_NAME="ATLAS PWA 5.0 UFC + MLB 4.0 + NFL 76.6"
+VERSION="ATLAS-PWA-5.1-POLISH"
+BUILD_NAME="ATLAS PWA 5.1 POLISH + UFC 1.1 + MLB 4.1 + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))

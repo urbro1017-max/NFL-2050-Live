@@ -285,3 +285,29 @@ body,.atlas{background:var(--atlas-bg)!important}
 .reduce766 *{animation:none!important;transition:none!important}
 @media(max-width:800px){.story766>div{grid-template-columns:1fr 1fr}.previewteams766{grid-template-columns:1fr 32px 1fr}.previewteams766>div{grid-template-columns:42px 1fr}.previewteams766>div:last-child{grid-template-columns:1fr 42px}.previewteams766 img{width:40px;height:40px}}
 @media(max-width:520px){.story766>div{grid-template-columns:1fr}.preview766 footer{align-items:flex-start;flex-direction:column}.previewteams766 strong{font-size:17px}}
+
+
+/* ATLAS 5.1 premium motion + rendering pass */
+:root{--ease-atlas:cubic-bezier(.22,.8,.22,1)}
+html{scroll-behavior:smooth}
+body{overflow-x:hidden}
+.card,.sport,.stat,.rank,.event,.fighter,nav button,button,a{transition:transform .24s var(--ease-atlas),border-color .24s var(--ease-atlas),box-shadow .24s var(--ease-atlas),background-color .24s var(--ease-atlas),opacity .24s var(--ease-atlas)}
+.card{content-visibility:auto;contain-intrinsic-size:1px 260px}
+.card:hover{transform:translateY(-2px)}
+.page{animation:atlasPageIn .38s var(--ease-atlas) both}
+@keyframes atlasPageIn{from{opacity:0;transform:translateY(8px) scale(.997)}to{opacity:1;transform:none}}
+@keyframes atlasRise{from{transform:scaleY(.08);opacity:.2}to{transform:scaleY(1);opacity:1}}
+@keyframes atlasDraw{from{stroke-dashoffset:500}to{stroke-dashoffset:0}}
+@keyframes atlasPulse{0%,100%{opacity:.72}50%{opacity:1}}
+.track i,.ibars i{transform-origin:bottom;animation:atlasRise .7s var(--ease-atlas) both}
+.loading:after{content:"";display:inline-block;width:7px;height:7px;margin-left:8px;border-radius:50%;background:currentColor;animation:atlasPulse 1s infinite}
+.atlas-chart{width:100%;height:250px;overflow:visible}
+.atlas-chart .gridline{stroke:#ffffff12;stroke-width:1}
+.atlas-chart .axis{fill:currentColor;opacity:.48;font-size:9px;font-weight:700}
+.atlas-chart .area{opacity:.14}
+.atlas-chart .line{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:500;animation:atlasDraw 1s var(--ease-atlas) forwards}
+.atlas-chart .dot{stroke-width:2}
+.chart-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.chart-title span{font-size:9px;letter-spacing:.12em;opacity:.55}
+.skeleton{height:14px;border-radius:7px;background:linear-gradient(90deg,#ffffff08,#ffffff14,#ffffff08);background-size:220% 100%;animation:shimmer 1.3s infinite}
+@keyframes shimmer{to{background-position:-220% 0}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.page,.track i,.ibars i,.atlas-chart .line,.loading:after,.skeleton{animation:none!important}.card,.sport,.stat,.rank,.event,.fighter,nav button,button,a{transition:none!important}}

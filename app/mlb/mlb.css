@@ -83,3 +83,29 @@ button,.clickable,.leader{touch-action:manipulation}
 .searchbox{width:100%;min-height:52px;background:#0d0914;border:1px solid #604174;border-radius:13px;color:var(--text);font-size:16px;font-weight:750;padding:0 16px;outline:none;box-shadow:inset 0 0 24px #a85cff0b}.searchbox:focus{border-color:var(--pink);box-shadow:0 0 0 3px #ff4fa31c,0 0 28px #a85cff18}.searchout,#cmpresults{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:7px;margin-top:10px}.searchhit{border:1px solid #3b2b49;background:#100c18;color:var(--text);padding:12px;border-radius:11px;text-align:left;cursor:pointer}.searchhit:hover{border-color:var(--pink);box-shadow:0 0 20px #ff4fa319}.searchhit b,.searchhit span{display:block}.searchhit b{font-size:14px}.searchhit span{font-size:10px;color:var(--muted);margin-top:3px}.comparegrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:13px}.comparecard{grid-column:auto}.comparecard h2{font-size:24px;margin:7px 0}.mini{width:30px;height:30px;font-size:15px}.askrow{display:grid;grid-template-columns:1fr auto;gap:10px}.askrow .action{font-size:11px;padding:0 20px}.aianswer{margin-top:13px;padding:18px;border-radius:12px;background:#0b0811;border:1px solid #352844;font-size:14px;line-height:1.65;white-space:pre-wrap}.newspaper{padding:15px 2px 28px;border-bottom:1px solid #4e3760;margin-bottom:18px}.newspaper h1{font-size:clamp(48px,8vw,92px);line-height:.85;letter-spacing:-.065em;margin:10px 0}.newspaper h1 em{font-style:normal;color:var(--lime);text-shadow:0 0 28px #d8ff4f2b}.dek{font-size:16px;color:var(--muted);max-width:800px}.action{min-height:42px}
 @media(max-width:1200px){.comparegrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.comparegrid{grid-template-columns:1fr}.askrow{grid-template-columns:1fr}.newspaper h1{font-size:52px}}
+
+
+/* ATLAS 5.1 premium motion + rendering pass */
+:root{--ease-atlas:cubic-bezier(.22,.8,.22,1)}
+html{scroll-behavior:smooth}
+body{overflow-x:hidden}
+.card,.sport,.stat,.rank,.event,.fighter,nav button,button,a{transition:transform .24s var(--ease-atlas),border-color .24s var(--ease-atlas),box-shadow .24s var(--ease-atlas),background-color .24s var(--ease-atlas),opacity .24s var(--ease-atlas)}
+.card{content-visibility:auto;contain-intrinsic-size:1px 260px}
+.card:hover{transform:translateY(-2px)}
+.page{animation:atlasPageIn .38s var(--ease-atlas) both}
+@keyframes atlasPageIn{from{opacity:0;transform:translateY(8px) scale(.997)}to{opacity:1;transform:none}}
+@keyframes atlasRise{from{transform:scaleY(.08);opacity:.2}to{transform:scaleY(1);opacity:1}}
+@keyframes atlasDraw{from{stroke-dashoffset:500}to{stroke-dashoffset:0}}
+@keyframes atlasPulse{0%,100%{opacity:.72}50%{opacity:1}}
+.track i,.ibars i{transform-origin:bottom;animation:atlasRise .7s var(--ease-atlas) both}
+.loading:after{content:"";display:inline-block;width:7px;height:7px;margin-left:8px;border-radius:50%;background:currentColor;animation:atlasPulse 1s infinite}
+.atlas-chart{width:100%;height:250px;overflow:visible}
+.atlas-chart .gridline{stroke:#ffffff12;stroke-width:1}
+.atlas-chart .axis{fill:currentColor;opacity:.48;font-size:9px;font-weight:700}
+.atlas-chart .area{opacity:.14}
+.atlas-chart .line{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:500;animation:atlasDraw 1s var(--ease-atlas) forwards}
+.atlas-chart .dot{stroke-width:2}
+.chart-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.chart-title span{font-size:9px;letter-spacing:.12em;opacity:.55}
+.skeleton{height:14px;border-radius:7px;background:linear-gradient(90deg,#ffffff08,#ffffff14,#ffffff08);background-size:220% 100%;animation:shimmer 1.3s infinite}
+@keyframes shimmer{to{background-position:-220% 0}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.page,.track i,.ibars i,.atlas-chart .line,.loading:after,.skeleton{animation:none!important}.card,.sport,.stat,.rank,.event,.fighter,nav button,button,a{transition:none!important}}

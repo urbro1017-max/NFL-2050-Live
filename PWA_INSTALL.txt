@@ -1,0 +1,22 @@
+ATLAS PWA 1.0
+
+DEPLOY
+Deploy this ZIP to the SAME Render web service/repository used by ATLAS, replacing the previous source.
+Keep your existing Render environment variables and Postgres database connection.
+The backend is the known NFL 76.6 engine, now serving the multi-sport ATLAS launcher at / and NFL at /nfl/.
+
+IMPORTANT
+Back up your current repo/source before replacing it. Do not delete the Render Postgres database.
+
+INSTALL ON WINDOWS
+1. After Render deploys successfully, open the ATLAS URL in Microsoft Edge or Chrome.
+2. Open the browser's app/install menu and choose Install ATLAS / Install this site as an app.
+3. ATLAS opens in its own standalone window and can be pinned to Start/taskbar.
+No unsigned EXE is required.
+
+ROUTES
+/       ATLAS sport launcher
+/nfl/   NFL ATLAS 76.6
+/mlb/   MLB ATLAS foundation
+
+MLB currently has its module shell. The live MLB data engine is the next build.

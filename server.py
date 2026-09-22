@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-MLB-1.0"
-BUILD_NAME="ATLAS PWA MLB 1.0 + NFL 76.6"
+VERSION="ATLAS-PWA-MLB-2.0"
+BUILD_NAME="ATLAS PWA MLB 2.0 + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2087,6 +2087,53 @@ def mlb_game(gid):
             "balls":ls.get("balls"),"strikes":ls.get("strikes"),"outs":ls.get("outs"),"bases":bases,
             "batter":(offense.get("batter") or {}).get("fullName"),"pitcher":(defense.get("pitcher") or {}).get("fullName"),
             "innings":ls.get("innings") or [],"plays":plays,"hitters":hitters,"pitchers":pitchers,"source":"MLB Stats API"}
+
+def mlb_leaders(season=None):
+    yr=season or time.gmtime().tm_year
+    cats=["homeRuns","battingAverage","runsBattedIn","stolenBases","hits","earnedRunAverage","strikeouts","wins","saves"]
+    out={}
+    for cat in cats:
+        try:
+            raw=mlb_get("/stats/leaders",{"leaderCategories":cat,"season":yr,"sportId":1,"limit":10})
+            rows=[]
+            for block in raw.get("leagueLeaders",[]):
+                for x in block.get("leaders",[]):
+                    rows.append({"rank":x.get("rank"),"value":x.get("value"),"player":(x.get("person") or {}).get("fullName"),
+                                 "playerId":(x.get("person") or {}).get("id"),"team":(x.get("team") or {}).get("name"),"teamId":(x.get("team") or {}).get("id")})
+            out[cat]=rows
+        except Exception: out[cat]=[]
+    return {"ok":True,"season":int(yr),"leaders":out,"source":"MLB Stats API"}
+
+def mlb_player(pid, season=None):
+    yr=season or time.gmtime().tm_year
+    raw=mlb_get(f"/people/{int(pid)}",{"hydrate":f"stats(group=[hitting,pitching,fielding],type=[season],season={yr}),currentTeam"})
+    p=(raw.get("people") or [{}])[0]
+    stats={}
+    for b in p.get("stats") or []:
+        group=(b.get("group") or {}).get("displayName") or (b.get("group") or {}).get("name")
+        splits=b.get("splits") or []
+        if splits: stats[group]=(splits[0].get("stat") or {})
+    return {"ok":True,"player":{"id":p.get("id"),"name":p.get("fullName"),"first":p.get("firstName"),"last":p.get("lastName"),
+        "number":p.get("primaryNumber"),"position":(p.get("primaryPosition") or {}).get("abbreviation"),
+        "team":(p.get("currentTeam") or {}).get("name"),"teamId":(p.get("currentTeam") or {}).get("id"),
+        "batSide":(p.get("batSide") or {}).get("description"),"pitchHand":(p.get("pitchHand") or {}).get("description"),
+        "stats":stats},"season":int(yr),"source":"MLB Stats API"}
+
+def mlb_schedule_range(start=None,end=None):
+    raw=mlb_get("/schedule",{"sportId":1,"startDate":start,"endDate":end,"hydrate":"team,linescore,probablePitcher"})
+    days=[]
+    for d in raw.get("dates",[]):
+        day=[]
+        for g in d.get("games",[]):
+            teams=g.get("teams") or {}; aw=teams.get("away") or {}; hm=teams.get("home") or {}; ls=g.get("linescore") or {}
+            day.append({"id":g.get("gamePk"),"date":g.get("gameDate"),"status":(g.get("status") or {}).get("detailedState"),
+                "abstract":(g.get("status") or {}).get("abstractGameState"),"inning":ls.get("currentInning"),"inningState":ls.get("inningState"),
+                "away":{"id":(aw.get("team") or {}).get("id"),"name":(aw.get("team") or {}).get("name"),"score":aw.get("score"),"probable":(aw.get("probablePitcher") or {}).get("fullName")},
+                "home":{"id":(hm.get("team") or {}).get("id"),"name":(hm.get("team") or {}).get("name"),"score":hm.get("score"),"probable":(hm.get("probablePitcher") or {}).get("fullName")},
+                "venue":(g.get("venue") or {}).get("name")})
+        days.append({"date":d.get("date"),"games":day})
+    return {"ok":True,"days":days,"source":"MLB Stats API"}
+
 # -------------- END ATLAS MLB 1.0 --------------
 
 class H(SimpleHTTPRequestHandler):
@@ -2133,6 +2180,15 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/mlb/teamstats":
             try:return self.sendj(mlb_team_stats((q.get("team") or [""])[0],(q.get("season") or [None])[0]))
             except Exception as e:return self.sendj({"ok":False,"groups":{},"error":str(e)},502)
+        if u.path=="/api/mlb/leaders":
+            try:return self.sendj(mlb_leaders((q.get("season") or [None])[0]))
+            except Exception as e:return self.sendj({"ok":False,"leaders":{},"error":str(e)},502)
+        if u.path=="/api/mlb/player":
+            try:return self.sendj(mlb_player((q.get("id") or [""])[0],(q.get("season") or [None])[0]))
+            except Exception as e:return self.sendj({"ok":False,"player":None,"error":str(e)},502)
+        if u.path=="/api/mlb/schedule-range":
+            try:return self.sendj(mlb_schedule_range((q.get("start") or [None])[0],(q.get("end") or [None])[0]))
+            except Exception as e:return self.sendj({"ok":False,"days":[],"error":str(e)},502)
         if u.path=="/api/mlb/game":
             try:return self.sendj(mlb_game((q.get("id") or [""])[0]))
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)

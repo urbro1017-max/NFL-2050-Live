@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="75.1"
-BUILD_NAME="ATLAS 75.1 REFINED VISUALS"
+VERSION="75.2"
+BUILD_NAME="ATLAS 75.2 REFINED VISUALS"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1851,7 +1851,7 @@ def atlas_ai_ask(question):
       "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
     }
     url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
-    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/75.1"},method="POST")
+    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/75.2"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
@@ -1911,7 +1911,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas751.js').exists() and (ROOT/'atlas751.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas752.js').exists() and (ROOT/'atlas752.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2034,7 +2034,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas751.js","css":"atlas751.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas752.js","css":"atlas752.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

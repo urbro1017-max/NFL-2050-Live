@@ -1,0 +1,11 @@
+ATLAS MLB 1.0
+Deploy over the existing ATLAS PWA source on Render. Keep the existing DATABASE_URL and environment variables.
+NFL 76.6 remains intact. MLB endpoints use a separate /api/mlb/* namespace and do not write into the NFL database.
+
+MLB 1.0 includes:
+Home, Games, Teams, Game Graphs, Weekly Recap, ATLAS AI
+MLB schedule, teams, standings, active rosters, team season stats, live/full game feed
+Animated base diamond, count/outs/inning, batter/pitcher, line score, recent plays, batting lines
+Verified-data empty states and no fabricated Statcast/projections.
+
+After Render deploys, the installed PWA should update from the same URL. If Windows still shows the old app, close/reopen ATLAS once.

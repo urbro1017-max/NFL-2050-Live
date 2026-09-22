@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="76.4"
-BUILD_NAME="ATLAS 76.4 FRANCHISE INTELLIGENCE"
+VERSION="76.5"
+BUILD_NAME="ATLAS 76.5 PREDICTION + EXPLORATION"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -89,7 +89,8 @@ class Store:
                     CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);
                     CREATE TABLE IF NOT EXISTS team_game_stats(game_id TEXT NOT NULL,team TEXT NOT NULL,opponent TEXT,points_for INTEGER,points_against INTEGER,result TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,team));
                     CREATE INDEX IF NOT EXISTS ix_tgs_team ON team_game_stats(team);
-                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);""")
+                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);
+                    CREATE TABLE IF NOT EXISTS model_snapshots(id BIGSERIAL PRIMARY KEY,ts BIGINT NOT NULL,payload JSONB); CREATE INDEX IF NOT EXISTS ix_model_snap_ts ON model_snapshots(ts);""")
             except Exception as e:
                 LAST["error"]="Postgres fallback: "+str(e); self.pg=None
         if not self.pg:
@@ -101,7 +102,8 @@ class Store:
             CREATE INDEX IF NOT EXISTS ix_pgs_player ON player_game_stats(player_id);
                     CREATE TABLE IF NOT EXISTS team_game_stats(game_id TEXT NOT NULL,team TEXT NOT NULL,opponent TEXT,points_for INTEGER,points_against INTEGER,result TEXT,stats JSONB,updated BIGINT,PRIMARY KEY(game_id,team));
                     CREATE INDEX IF NOT EXISTS ix_tgs_team ON team_game_stats(team);
-                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);"""); c.commit(); c.close()
+                    CREATE TABLE IF NOT EXISTS data_pipeline(game_id TEXT PRIMARY KEY,is_final BOOLEAN,teams_written INTEGER,players_written INTEGER,source TEXT,updated BIGINT,error TEXT);
+                    CREATE TABLE IF NOT EXISTS model_snapshots(id INTEGER PRIMARY KEY AUTOINCREMENT,ts INTEGER NOT NULL,payload TEXT); CREATE INDEX IF NOT EXISTS ix_model_snap_ts ON model_snapshots(ts);"""); c.commit(); c.close()
     def conn(self):
         if self.pg:return self.pg.connect(DATABASE_URL,autocommit=True)
         c=sqlite3.connect(DBFILE);c.row_factory=sqlite3.Row;return c
@@ -224,6 +226,24 @@ class Store:
         c=self.conn(); rows=c.execute("SELECT DISTINCT game_id FROM player_game_stats").fetchall(); c.close()
         return {str(r[0] if self.pg else r["game_id"]) for r in rows}
 
+    def save_model_snapshot(self,payload):
+        c=self.conn(); now=int(time.time()); raw=json.dumps(payload)
+        if self.pg:c.execute("INSERT INTO model_snapshots(ts,payload) VALUES(%s,%s)",(now,raw))
+        else:c.execute("INSERT INTO model_snapshots(ts,payload) VALUES(?,?)",(now,raw));c.commit()
+        try:
+            c.execute("DELETE FROM model_snapshots WHERE ts<"+("%s" if self.pg else "?"),(now-2592000,))
+            if not self.pg:c.commit()
+        except Exception:pass
+        c.close()
+    def model_snapshots(self,limit=96):
+        c=self.conn();rows=c.execute("SELECT ts,payload FROM model_snapshots ORDER BY ts DESC LIMIT "+str(max(1,min(int(limit),500)))).fetchall();c.close();out=[]
+        for r in rows:
+            ts=r[0] if self.pg else r["ts"];raw=r[1] if self.pg else r["payload"]
+            if isinstance(raw,str):
+                try:raw=json.loads(raw)
+                except:raw={}
+            out.append({"ts":ts,"payload":raw or {}})
+        return out
     def games(self):
         c=self.conn(); rows=c.execute("SELECT game_id,status,updated,payload FROM games ORDER BY updated DESC").fetchall();c.close()
         out=[]
@@ -1807,6 +1827,10 @@ def rebuild_ai_snapshot():
     try:
         v=atlas_projection_engine(); dur=round((time.perf_counter()-t)*1000,1)
         with AI_SNAPSHOT_LOCK:AI_SNAPSHOT.update({'ts':time.time(),'value':v,'error':None,'duration_ms':dur,'building':False})
+        try:
+            hist=STORE.model_snapshots(1)
+            if not hist or int(time.time())-int(hist[0].get("ts") or 0)>=1800: STORE.save_model_snapshot(v)
+        except Exception as e:LAST["model_snapshot_warning"]=str(e)[:180]
         return True
     except Exception as e:
         with AI_SNAPSHOT_LOCK:AI_SNAPSHOT.update({'error':f'{type(e).__name__}: {e}','building':False})
@@ -1854,7 +1878,12 @@ def _atlas_ai_context(question):
                 focus_players.append({"name":row.get("name"),"team":row.get("team"),"position":row.get("position"),"game_id":row.get("game_id"),"category":row.get("category"),"stats":row.get("stats")})
                 if len(focus_players)>=16: break
     except Exception: pass
-    return {"atlas_model":{"teams":teams,"upcoming_games":games,"top_player_projections":fantasy,"mvp_signal":mvp,"diagnostics":snap.get("diagnostics") or {},"formula":snap.get("formula") or {}},"focus_teams":mentioned[:4],"focus_team_evidence":focus_team_evidence,"focus_player_rows":focus_players,"rules":{"facts":"Only use supplied ATLAS data as current statistical facts.","missing":"If the data needed is absent, say ATLAS does not have it yet.","predictions":"Clearly label predictions/rankings as ATLAS model outputs, not facts.","no_invention":"Never invent injuries, news, plays, stats, contracts, odds, or Next Gen Stats.","explain_evidence":"When useful, name the specific stored stats or ATLAS model fields that support the explanation."}}
+    history=[]
+    try:
+        for row in STORE.model_snapshots(6):
+            history.append({"ts":row.get("ts"),"teams":[{"abbr":x.get("abbr"),"strength":x.get("strength"),"projected_wins":x.get("projected_wins")} for x in ((row.get("payload") or {}).get("teams") or [])]})
+    except Exception:pass
+    return {"atlas_model":{"teams":teams,"upcoming_games":games,"top_player_projections":fantasy,"mvp_signal":mvp,"diagnostics":snap.get("diagnostics") or {},"formula":snap.get("formula") or {},"recent_model_history":history},"focus_teams":mentioned[:4],"focus_team_evidence":focus_team_evidence,"focus_player_rows":focus_players,"rules":{"facts":"Only use supplied ATLAS data as current statistical facts.","missing":"If the data needed is absent, say ATLAS does not have it yet.","predictions":"Clearly label predictions/rankings as ATLAS model outputs, not facts.","no_invention":"Never invent injuries, news, plays, stats, contracts, odds, or Next Gen Stats.","explain_evidence":"When useful, name the specific stored stats or ATLAS model fields that support the explanation."}}
 
 def atlas_ai_ask(question):
     question=str(question or "").strip()
@@ -1875,7 +1904,7 @@ def atlas_ai_ask(question):
       "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
     }
     url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
-    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.4"},method="POST")
+    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.5"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
@@ -1935,7 +1964,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas764.js').exists() and (ROOT/'atlas764.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas765.js').exists() and (ROOT/'atlas765.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2033,6 +2062,30 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/search":
             return self.sendj(atlas_search((q.get("q") or [""])[0]))
         if u.path=="/api/projections":return self.sendj(ai_snapshot_response())
+        if u.path=="/api/model-history":
+            hist=STORE.model_snapshots(240);teams={}
+            for row in reversed(hist):
+                for t in (row.get("payload") or {}).get("teams") or []:
+                    ab=norm_team_abbr(t.get("abbr"))
+                    if ab:teams.setdefault(ab,[]).append({"ts":row.get("ts"),"strength":t.get("strength"),"projected_wins":t.get("projected_wins")})
+            receipts=[]
+            for meta in STORE.games():
+                g=STORE.game(str(meta.get("id"))) or {}
+                if not _is_final_game(g):continue
+                gid=str(g.get("id") or meta.get("id"));date=g.get("date")
+                try:kickoff=int(datetime.fromisoformat(str(date).replace("Z","+00:00")).timestamp()) if date else None
+                except:kickoff=None
+                pred=None;pred_ts=None
+                for row in hist:
+                    if kickoff and int(row.get("ts") or 0)>=kickoff:continue
+                    candidate=next((x for x in ((row.get("payload") or {}).get("games") or []) if str(x.get("game_id") or x.get("id"))==gid),None)
+                    if candidate:pred=candidate;pred_ts=row.get("ts");break
+                ts=g.get("teams") or []
+                if pred and len(ts)==2:
+                    winner=max(ts,key=lambda x:int(x.get("score") or 0)).get("abbr");pick=norm_team_abbr(pred.get("pick") or pred.get("favorite") or pred.get("predicted_winner"))
+                    receipts.append({"game_id":gid,"pick":pick,"winner":norm_team_abbr(winner),"correct":bool(pick and pick==norm_team_abbr(winner)),"snapshot_ts":pred_ts})
+            correct=sum(1 for x in receipts if x.get("correct"))
+            return self.sendj({"ok":True,"snapshots":len(hist),"teams":teams,"receipts":receipts,"accuracy":{"graded":len(receipts),"correct":correct,"rate":round(correct/len(receipts)*100,1) if receipts else None},"updated":int(time.time())})
         if u.path=="/api/ai/status":return self.sendj(atlas_ai_status())
         if u.path=="/api/projections/rebuild":return self.sendj({"ok":False,"error":"AI snapshots rebuild automatically."},405)
         if u.path=="/api/archive-coverage":
@@ -2089,7 +2142,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas764.js","css":"atlas764.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas765.js","css":"atlas765.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

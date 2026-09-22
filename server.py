@@ -1,3 +1,4 @@
+import urllib.parse
 import json,os,time,sqlite3,csv,io,threading,re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -11,8 +12,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-MLB-2.1"
-BUILD_NAME="ATLAS PWA MLB 2.1 DATA FIX + NFL 76.6"
+VERSION="ATLAS-PWA-MLB-2.1.1"
+BUILD_NAME="ATLAS PWA MLB 2.1.1 URLENCODE FIX + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2003,7 +2004,7 @@ MLB_GAME_API="https://statsapi.mlb.com/api/v1.1"
 def mlb_get(path, params=None, timeout=12):
     url=MLB_API+path
     if params:
-        url += ("&" if "?" in url else "?")+urlencode({k:v for k,v in params.items() if v not in (None,"")})
+        url += ("&" if "?" in url else "?")+urllib.parse.urlencode({k:v for k,v in params.items() if v not in (None,"")})
     req=Request(url,headers={"User-Agent":"ATLAS-MLB/1.0","Accept":"application/json"})
     with urlopen(req,timeout=timeout) as r:return json.loads(r.read().decode())
 

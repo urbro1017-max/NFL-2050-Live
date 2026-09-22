@@ -14,8 +14,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-5.1-POLISH"
-BUILD_NAME="ATLAS PWA 5.1 POLISH + UFC 1.1 + MLB 4.1 + NFL 76.6"
+VERSION="ATLAS-PWA-5.4-LIVE-HOMEBASE"
+BUILD_NAME="ATLAS PWA 5.4 LIVE EXPERIENCE + UFC 1.4 + MLB 4.4 + NFL 76.6"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2447,8 +2447,35 @@ def ufc_diagnostics():
             x=fn(); arr=x.get("events") if name=="events" else x.get("fighters")
             checks[name]={"ok":bool(x.get("ok")) and len(arr or [])>0,"count":len(arr or []),"source":x.get("source")}
         except Exception as e:checks[name]={"ok":False,"count":0,"error":f"{type(e).__name__}: {e}"}
-    return {"ok":all(x["ok"] for x in checks.values()),"version":"UFC-1.0","checks":checks,"principles":["Verified UFCStats data only","No betting features","No fabricated live stats","Missing data remains missing"]}
+    return {"ok":all(x["ok"] for x in checks.values()),"version":"UFC-1.1","checks":checks,"principles":["Verified UFCStats data only","No betting features","No fabricated live stats","Missing data remains missing"]}
 # -------------- END UFC ATLAS 1.0 --------------
+
+
+def atlas_system_health():
+    out={"ok":True,"version":VERSION,"time":int(time.time()),"components":{}}
+    try:
+        out["components"]["nfl_store"]={"ok":True}
+        # Do not trigger external providers here; health is intentionally cheap.
+        if hasattr(STORE,"player_stat_rows"):
+            rows=STORE.player_stat_rows()
+            out["components"]["nfl_store"]["player_rows"]=len(rows or [])
+    except Exception as e:out["components"]["nfl_store"]={"ok":False,"error":str(e)[:120]}
+    try:out["components"]["mlb_store"]={"ok":True,**MLB_STORE.counts()}
+    except Exception as e:out["components"]["mlb_store"]={"ok":False,"error":str(e)[:120]}
+    out["components"]["ufc_cache"]={"ok":True,"cached_pages":len(UFC_CACHE)}
+    out["components"]["gemini"]={"ok":bool(GEMINI_API_KEY),"configured":bool(GEMINI_API_KEY)}
+    out["ok"]=all(v.get("ok",False) for k,v in out["components"].items() if k!="gemini")
+    return out
+
+def atlas_homebase():
+    out={"ok":True,"generated":int(time.time()),"system":atlas_system_health(),"mlb":{},"ufc":{}}
+    try:
+        x=mlb_schedule();out["mlb"]={"ok":True,"games":(x.get("games") or [])[:8],"archive":MLB_STORE.counts()}
+    except Exception as e:out["mlb"]={"ok":False,"games":[],"error":str(e)[:120]}
+    try:
+        x=ufc_events();out["ufc"]={"ok":True,"events":(x.get("events") or [])[:5]}
+    except Exception as e:out["ufc"]={"ok":False,"events":[],"error":str(e)[:120]}
+    return out
 
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
@@ -2478,6 +2505,12 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
+        if u.path=="/api/homebase":
+            try:return self.sendj(atlas_homebase())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)
+        if u.path=="/api/system-health":
+            try:return self.sendj(atlas_system_health())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)
         # UFC ATLAS endpoints — statistical data is isolated from NFL/MLB pipelines.
         if u.path=="/api/ufc/events":
             try:return self.sendj(ufc_events())
@@ -2493,6 +2526,13 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"fighter":None,"error":str(e)},502)
         if u.path=="/api/ufc/fight":
             try:return self.sendj(ufc_fight((q.get("id") or [""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/ufc/fight-refresh":
+            try:
+                fid=(q.get("id") or [""])[0]
+                key=UFCSTATS+"/fight-details/"+re.sub(r"[^a-fA-F0-9]","",str(fid))
+                with UFC_CACHE_LOCK: UFC_CACHE.pop(key,None)
+                out=ufc_fight(fid);out["refreshed_at"]=int(time.time());return self.sendj(out)
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
         if u.path=="/api/ufc/search":
             try:return self.sendj(ufc_search((q.get("q") or [""])[0]))

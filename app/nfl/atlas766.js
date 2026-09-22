@@ -1,6 +1,10 @@
 
+function nflMomentum53(g){let plays=g?.plays||g?.recent_plays||[];let vals=[];for(let p of plays){let y=Number(p?.yards??p?.yards_gained??p?.statYardage);if(Number.isFinite(y))vals.push(y)}return ATLAS53.spark(vals.slice(-20),{label:"RECENT PLAY YARDAGE FLOW",suffix:" YDS"})}
+function nflScorePulse53(g){let a=Number(g?.away?.score??g?.away_score),h=Number(g?.home?.score??g?.home_score);if(!Number.isFinite(a)||!Number.isFinite(h))return '<div class="empty">Score pulse waits for verified score data.</div>';return `<div class="scorepulse53"><div><span>${g?.away?.abbr||g?.away?.team||"AWAY"}</span><b>${a}</b></div><i></i><div><span>${g?.home?.abbr||g?.home?.team||"HOME"}</span><b>${h}</b></div></div>`}
+
+
 function atlasLineChart(rows,xKey,yKey,label){
- rows=(rows||[]).map(r=>({x:r?.[xKey],y:Number(r?.[yKey])})).filter(r=>r.x!=null&&Number.isFinite(r.y));
+ rows=(rows||[]).map(r=>({x:r?.[xKey],y:Number(r?.[yKey])})).filter(r=>r.x!=null&&Number.isFinite(r.y)&&r.y!==null);
  if(rows.length<2)return `<div class="empty">More verified data is needed for this trend.</div>`;
  let W=760,H=230,P=28,ys=rows.map(r=>r.y),mn=Math.min(...ys),mx=Math.max(...ys);if(mx===mn){mx+=1;mn-=1}
  let X=i=>P+i*(W-P*2)/Math.max(1,rows.length-1),Y=v=>H-P-(v-mn)*(H-P*2)/(mx-mn);

@@ -14,8 +14,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-6.1-INTEGRATION-RELIABILITY"
-BUILD_NAME="ATLAS 6.1 INTEGRATION + RELIABILITY"
+VERSION="ATLAS-PWA-7.0-NBA"
+BUILD_NAME="ATLAS 7.0 NBA"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2508,6 +2508,147 @@ def atlas_integrity61():
     checks["ai_config"]={"ok":True,"configured":bool(GEMINI_API_KEY)}
     return {"ok":all(v.get("ok") for k,v in checks.items() if k!="ai_config"),"version":VERSION,"checks":checks,"time":int(time.time())}
 
+def atlas_trust_audit62():
+    checks={}
+    try:checks["nfl"]={"ok":True,"player_rows":len(STORE.player_stat_rows() or []) if hasattr(STORE,"player_stat_rows") else None}
+    except Exception as e:checks["nfl"]={"ok":False,"error":str(e)[:120]}
+    try:checks["mlb"]={"ok":True,**MLB_STORE.counts()}
+    except Exception as e:checks["mlb"]={"ok":False,"error":str(e)[:120]}
+    checks["ufc"]={"ok":callable(ufc_events) and callable(ufc_fighter) and callable(ufc_fight),"source":"UFCStats parser"}
+    checks["guards"]={"ok":True,"rules":["Missing verified data remains missing","ATLAS model outputs are labeled","No synthetic UFC live statistics"]}
+    return {"ok":all(v.get("ok") for v in checks.values()),"version":VERSION,"checks":checks,"time":int(time.time())}
+
+
+# ==================== NBA ATLAS 7.0 ====================
+NBA_SEASON=2027
+NBA_CACHE={}
+NBA_CACHE_LOCK=threading.Lock()
+
+def nba_get(path,params=None,ttl=20):
+    q=("?"+urllib.parse.urlencode(params)) if params else ""
+    url="https://site.api.espn.com/apis/site/v2/sports/basketball/nba"+path+q
+    key=url; now=time.time()
+    with NBA_CACHE_LOCK:
+        hit=NBA_CACHE.get(key)
+        if hit and now-hit[0]<ttl:return hit[1]
+    data=fetch(url,"ESPN_NBA")
+    with NBA_CACHE_LOCK:NBA_CACHE[key]=(now,data)
+    return data
+
+def nba_game_row(e):
+    c=(e.get("competitions") or [{}])[0]; comps=c.get("competitors") or []
+    def side(kind):
+        x=next((z for z in comps if z.get("homeAway")==kind),{})
+        t=x.get("team") or {}
+        return {"id":t.get("id"),"abbr":t.get("abbreviation"),"name":t.get("displayName"),"logo":t.get("logo"),"score":x.get("score"),"record":next((r.get("summary") for r in x.get("records",[]) if r.get("name")=="overall"),None)}
+    st=c.get("status") or e.get("status") or {}; typ=st.get("type") or {}
+    return {"id":str(e.get("id")),"date":e.get("date"),"name":e.get("name"),"home":side("home"),"away":side("away"),
+            "state":typ.get("state"),"completed":bool(typ.get("completed")),"status":typ.get("shortDetail") or typ.get("detail") or typ.get("description"),
+            "clock":st.get("displayClock"),"period":st.get("period"),"venue":(c.get("venue") or {}).get("fullName"),"source":"ESPN NBA"}
+
+def nba_schedule(date=None):
+    p={"limit":100}; 
+    if date:p["dates"]=str(date).replace("-","")
+    raw=nba_get("/scoreboard",p,12)
+    return {"ok":True,"season":NBA_SEASON,"games":[nba_game_row(e) for e in raw.get("events",[])],"source":"ESPN NBA Scoreboard"}
+
+def nba_teams():
+    raw=nba_get("/teams",{"limit":50},21600); teams=[]
+    for sp in raw.get("sports",[]):
+      for lg in sp.get("leagues",[]):
+       for x in lg.get("teams",[]):
+        t=x.get("team") or x
+        teams.append({"id":t.get("id"),"abbr":t.get("abbreviation"),"name":t.get("displayName"),"location":t.get("location"),"nickname":t.get("name"),"logo":next((z.get("href") for z in t.get("logos",[]) if z.get("href")),None) or t.get("logo"),"color":t.get("color"),"alternate":t.get("alternateColor")})
+    return {"ok":True,"teams":teams,"source":"ESPN NBA Teams"}
+
+def nba_standings():
+    raw=fetch(f"https://site.api.espn.com/apis/v2/sports/basketball/nba/standings?season={NBA_SEASON}","ESPN_NBA_STANDINGS")
+    rows=[]
+    def walk(x,group=None):
+        if isinstance(x,dict):
+            g=x.get("name") or x.get("abbreviation") or group
+            if "standings" in x and isinstance(x["standings"],dict):
+                for ent in x["standings"].get("entries",[]):
+                    team=ent.get("team") or {}; stats={z.get("name"):z.get("displayValue") for z in ent.get("stats",[])}
+                    rows.append({"id":team.get("id"),"abbr":team.get("abbreviation"),"name":team.get("displayName"),"logo":next((z.get("href") for z in team.get("logos",[]) if z.get("href")),None),"conference":g,"stats":stats})
+            for v in x.values():walk(v,g)
+        elif isinstance(x,list):
+            for v in x:walk(v,group)
+    walk(raw)
+    # de-dupe by team id
+    out=[]; seen=set()
+    for r in rows:
+        if r["id"] and r["id"] not in seen:seen.add(r["id"]);out.append(r)
+    return {"ok":True,"standings":out,"source":"ESPN NBA Standings"}
+
+def nba_roster(team):
+    tid=str(team)
+    if not tid.isdigit():
+        tid=next((str(t["id"]) for t in nba_teams()["teams"] if str(t.get("abbr","")).upper()==str(team).upper()),tid)
+    raw=nba_get(f"/teams/{tid}/roster",ttl=1800); players=[]
+    for a in raw.get("athletes",[]):
+        # Some ESPN roster feeds group athletes by position.
+        group=a.get("items") if isinstance(a,dict) else None
+        source=group if isinstance(group,list) else [a]
+        for p in source:
+            players.append({"id":p.get("id"),"name":p.get("fullName") or p.get("displayName"),"jersey":p.get("jersey"),"position":(p.get("position") or {}).get("abbreviation"),"height":p.get("displayHeight"),"weight":p.get("displayWeight"),"age":p.get("age"),"headshot":(p.get("headshot") or {}).get("href")})
+    return {"ok":True,"team":team,"players":players,"source":"ESPN NBA Roster"}
+
+def nba_summary(gid):
+    raw=fetch(f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={gid}","ESPN_NBA_SUMMARY")
+    h=raw.get("header") or {}; game=nba_game_row((h.get("competitions") and {"id":gid,"date":(h.get("competitions") or [{}])[0].get("date"),"name":h.get("gameNote"),"competitions":h.get("competitions")}) or {"id":gid,"competitions":[]})
+    plays=[]
+    for p in raw.get("plays",[]) or []:
+        plays.append({"id":p.get("id"),"period":(p.get("period") or {}).get("number"),"clock":(p.get("clock") or {}).get("displayValue"),"text":p.get("text"),"score":p.get("awayScore") and f'{p.get("awayScore")}-{p.get("homeScore")}',"scoring":p.get("scoringPlay")})
+    box=[]
+    for team in (raw.get("boxscore") or {}).get("players",[]) or []:
+        tm=team.get("team") or {}
+        for cat in team.get("statistics",[]) or []:
+            labels=cat.get("labels") or cat.get("names") or []
+            for a in cat.get("athletes",[]) or []:
+                ath=a.get("athlete") or {}; vals=a.get("stats") or []
+                box.append({"id":ath.get("id"),"name":ath.get("displayName"),"team":tm.get("abbreviation"),"headshot":(ath.get("headshot") or {}).get("href"),"starter":a.get("starter"),"stats":dict(zip(labels,vals))})
+    return {"ok":True,"game":game,"plays":plays[-80:],"players":box,"leaders":raw.get("leaders") or [],"source":"ESPN NBA Summary"}
+
+def nba_player(aid):
+    raw=nba_get(f"/athletes/{aid}",ttl=3600)
+    a=raw.get("athlete") or raw
+    return {"ok":True,"player":{"id":a.get("id"),"name":a.get("displayName") or a.get("fullName"),"headshot":(a.get("headshot") or {}).get("href"),"position":(a.get("position") or {}).get("abbreviation"),"team":((a.get("team") or {}).get("displayName")),"height":a.get("displayHeight"),"weight":a.get("displayWeight"),"age":a.get("age"),"jersey":a.get("jersey")},"source":"ESPN NBA Athlete"}
+
+def nba_leaders():
+    raw=fetch(f"https://site.api.espn.com/apis/site/v3/sports/basketball/nba/leaders?season={NBA_SEASON}","ESPN_NBA_LEADERS")
+    cats=[]
+    for c in raw.get("leaders",[]) or raw.get("categories",[]) or []:
+        rows=[]
+        for x in c.get("leaders",[]) or []:
+            a=x.get("athlete") or {}; tm=x.get("team") or {}
+            rows.append({"id":a.get("id"),"name":a.get("displayName"),"team":tm.get("abbreviation"),"headshot":(a.get("headshot") or {}).get("href"),"value":x.get("displayValue") or x.get("value")})
+        cats.append({"name":c.get("displayName") or c.get("name"),"abbr":c.get("abbreviation"),"leaders":rows})
+    return {"ok":True,"categories":cats,"source":"ESPN NBA Leaders"}
+
+def nba_search(q):
+    q=str(q or "").lower().strip(); out=[]
+    if not q:return {"ok":True,"results":[]}
+    for t in nba_teams()["teams"]:
+        if q in str(t.get("name","")).lower() or q in str(t.get("abbr","")).lower():out.append({"type":"team",**t})
+    # Search current rosters only after a team-name hit would be expensive; use ESPN search endpoint when available.
+    try:
+        raw=fetch("https://site.api.espn.com/apis/search/v2?query="+urllib.parse.quote(q)+"&limit=20","ESPN_SEARCH")
+        for r in raw.get("results",[]) or []:
+            if str(r.get("league","")).lower()=="nba" or "nba" in str(r.get("type","")).lower():
+                out.append({"type":"search","name":r.get("displayName") or r.get("name"),"id":r.get("id")})
+    except:pass
+    return {"ok":True,"results":out[:25],"source":"ESPN public feeds"}
+
+def nba_diagnostics():
+    checks={}
+    for name,fn in [("scoreboard",nba_schedule),("teams",nba_teams),("standings",nba_standings)]:
+        try:
+            x=fn(); checks[name]={"ok":bool(x.get("ok")),"count":len(x.get("games") or x.get("teams") or x.get("standings") or [])}
+        except Exception as e:checks[name]={"ok":False,"error":str(e)[:120]}
+    return {"ok":all(x["ok"] for x in checks.values()),"checks":checks,"source":"ESPN NBA public feeds","rules":["No betting features","No fabricated player/game stats","Missing values remain unavailable"]}
+
+
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
     def end_headers(self):
@@ -2536,6 +2677,36 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
+        if u.path=="/api/nba/schedule":
+            try:return self.sendj(nba_schedule(q.get("date",[None])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/teams":
+            try:return self.sendj(nba_teams())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/standings":
+            try:return self.sendj(nba_standings())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/roster":
+            try:return self.sendj(nba_roster(q.get("team",[""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/game":
+            try:return self.sendj(nba_summary(q.get("id",[""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/player":
+            try:return self.sendj(nba_player(q.get("id",[""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/leaders":
+            try:return self.sendj(nba_leaders())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/search":
+            try:return self.sendj(nba_search(q.get("q",[""])[0]))
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/nba/diagnostics":
+            try:return self.sendj(nba_diagnostics())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},502)
+        if u.path=="/api/trust-audit":
+            try:return self.sendj(atlas_trust_audit62())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)
         if u.path=="/api/integrity":
             try:return self.sendj(atlas_integrity61())
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)

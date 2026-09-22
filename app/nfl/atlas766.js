@@ -176,10 +176,10 @@ render();
 document.addEventListener("atlas:nfl-gamecast",e=>mountNFLGameCast61(e.detail));
 (function nflGameCastAuto61(){
  let last="";
- setInterval(()=>{try{
+ ATLAS54.watch("nfl-gamecast61",async()=>{try{
    let path=location.hash||location.pathname;
    if(!/graph/i.test(path))return;
    let g=(typeof state!=="undefined"&&state?.game)||(typeof S!=="undefined"&&S?.game)||(typeof selectedGame!=="undefined"&&selectedGame);
    if(!g)return;let id=String(g.id||g.game_id||g.event_id||"");if(id&&id!==last){last=id;mountNFLGameCast61(g)}
- }catch{}},2500)
+ }catch{}},3000)
 })();

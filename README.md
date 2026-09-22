@@ -1,4 +1,4 @@
-# ATLAS 76.5 — Refined Visual Intelligence
+# ATLAS 76.6 — Refined Visual Intelligence
 
 A visual overhaul built on the working ATLAS 67.1 data pipeline.
 
@@ -18,74 +18,77 @@ A visual overhaul built on the working ATLAS 67.1 data pipeline.
 Upload the extracted repository contents to GitHub/Render. Do not commit a local SQLite database or an OpenAI API key.
 
 
-## 76.5 refinement
+## 76.6 refinement
 Removed redundant visual layers from Home, Teams, and ATLAS AI so each metric has one primary home. Game, Game Graphs, and Weekly Recap retain supplemental visuals where they add distinct information. Homepage model-leader duplication was removed and spacing/hierarchy tightened.
 
 
-ATLAS 76.5 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
+ATLAS 76.6 adds Visual Intelligence charts and command search while preserving the 71.0 clean-slate interface.
 
 
-ATLAS 76.5 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
+ATLAS 76.6 adds live animated field position, auto-reordering live player production, useful live game comparisons, and a clean warm amber/coral/plum palette replacing the blue-heavy theme.
 
 
-ATLAS 76.5 Connected Intelligence: contextual grounded OpenAI reasoning, player intelligence drawer, Compare Lab, live game pulse/game-day mode, position-aware impact ordering, team timeline, prediction receipts, confidence badges, favorite team, command search 2.0, and mobile refinements.
+ATLAS 76.6 Connected Intelligence: contextual grounded OpenAI reasoning, player intelligence drawer, Compare Lab, live game pulse/game-day mode, position-aware impact ordering, team timeline, prediction receipts, confidence badges, favorite team, command search 2.0, and mobile refinements.
 
 
-76.5 Production Recovery: player profile endpoint is resilient to ESPN profile/stat/gamelog failures, falls back to ATLAS roster/archive data, drawer accepts list/object stats, and duplicate simultaneous API requests are coalesced.
+76.6 Production Recovery: player profile endpoint is resilient to ESPN profile/stat/gamelog failures, falls back to ATLAS roster/archive data, drawer accepts list/object stats, and duplicate simultaneous API requests are coalesced.
 
 
-76.5: player drawer passes known roster name/team into the backend; player profiles can render from team roster + ATLAS archive without requiring ESPN athlete-profile success. Stale bundled SQLite DB removed.
+76.6: player drawer passes known roster name/team into the backend; player profiles can render from team roster + ATLAS archive without requiring ESPN athlete-profile success. Stale bundled SQLite DB removed.
 
 
-76.5 Player Intelligence: position-aware production filtering and readable archived game context (opponent/date/result when stored). Irrelevant QB stats are no longer shown on TE/WR/RB profiles.
+76.6 Player Intelligence: position-aware production filtering and readable archived game context (opponent/date/result when stored). Irrelevant QB stats are no longer shown on TE/WR/RB profiles.
 
 
-76.5: browser title corrected to ATLAS 76.5; player production uses exact position-aware semantic stat matching and deduplication so TE profiles no longer surface passing/rushing fumble variants as receiving production.
+76.6: browser title corrected to ATLAS 76.6; player production uses exact position-aware semantic stat matching and deduplication so TE profiles no longer surface passing/rushing fumble variants as receiving production.
 
 
-76.5 GAME NIGHT: larger typography, warm-only neon palette, streamlined live box score, two additional live game graphs with 5-second graph refresh, and clearer OpenAI API diagnostics without exposing secrets.
+76.6 GAME NIGHT: larger typography, warm-only neon palette, streamlined live box score, two additional live game graphs with 5-second graph refresh, and clearer OpenAI API diagnostics without exposing secrets.
 
 
-76.5: ATLAS AI reasoning provider migrated from OpenAI to Gemini. Configure GEMINI_API_KEY in Render; optional GEMINI_MODEL defaults to gemini-3.5-flash. Key remains server-side.
+76.6: ATLAS AI reasoning provider migrated from OpenAI to Gemini. Configure GEMINI_API_KEY in Render; optional GEMINI_MODEL defaults to gemini-3.5-flash. Key remains server-side.
 
 
-76.5 visual correction: full stylesheet color audit/remap removes remaining cool blue/cyan legacy colors and globally raises interface typography sizes while preserving Game Night box score, live graphs, and Gemini integration.
+76.6 visual correction: full stylesheet color audit/remap removes remaining cool blue/cyan legacy colors and globally raises interface typography sizes while preserving Game Night box score, live graphs, and Gemini integration.
 
 
-76.5 instant-boot recovery: HTTP server binds before database bootstrap, AI snapshot, or collector work so Render can serve the UI immediately even if a provider/database repair is slow.
+76.6 instant-boot recovery: HTTP server binds before database bootstrap, AI snapshot, or collector work so Render can serve the UI immediately even if a provider/database repair is slow.
 
 
-76.5 loading recovery: the browser no longer waits indefinitely for core data before rendering. Core API calls begin in parallel with a 1.2s first-paint budget, so the ATLAS shell renders even while background ingestion/database endpoints are busy. Also corrects remaining OpenAI UI labels to Gemini and hard-coded graph colors to the warm palette.
+76.6 loading recovery: the browser no longer waits indefinitely for core data before rendering. Core API calls begin in parallel with a 1.2s first-paint budget, so the ATLAS shell renders even while background ingestion/database endpoints are busy. Also corrects remaining OpenAI UI labels to Gemini and hard-coded graph colors to the warm palette.
 
 
-76.5 boot recovery: HTML now contains a guaranteed visible first-paint ATLAS boot screen before JavaScript executes, plus browser startup-error reporting. The JS bundle also paints synchronously before any API work. This prevents an unexplained blank black page and surfaces any browser-side startup failure visibly.
+76.6 boot recovery: HTML now contains a guaranteed visible first-paint ATLAS boot screen before JavaScript executes, plus browser startup-error reporting. The JS bundle also paints synchronously before any API work. This prevents an unexplained blank black page and surfaces any browser-side startup failure visibly.
 
 
-76.5 runtime fix: fixes a top-level ReferenceError (`g is not defined`) caused by the Game Graphs live-refresh block being outside `graphs()`. This error prevented the entire browser bundle from starting and produced the blank black page.
+76.6 runtime fix: fixes a top-level ReferenceError (`g is not defined`) caused by the Game Graphs live-refresh block being outside `graphs()`. This error prevented the entire browser bundle from starting and produced the blank black page.
 
 
-76.5 game-night polish: improved readability, spacing, matchup/box-score hierarchy, interactive feedback, empty states, AI answer readability, mobile sizing, and remaining warm graph colors. Proven 75.6 startup/runtime and data pipeline are preserved.
+76.6 game-night polish: improved readability, spacing, matchup/box-score hierarchy, interactive feedback, empty states, AI answer readability, mobile sizing, and remaining warm graph colors. Proven 75.6 startup/runtime and data pipeline are preserved.
 
 
-76.5 refinement: tighter information hierarchy, consistent cards and numeric alignment, cleaner controls/focus states, improved player/ranking rows, warmer remaining graph accents, desktop width discipline, and a stronger mobile layout. No ingestion/database architecture changes.
+76.6 refinement: tighter information hierarchy, consistent cards and numeric alignment, cleaner controls/focus states, improved player/ranking rows, warmer remaining graph accents, desktop width discipline, and a stronger mobile layout. No ingestion/database architecture changes.
 
 
-76.5 Complete UI: replaces dead/blank data areas with explicit verified-data states, clarifies missing values, adds accessible labels/focus/reduced-motion support, adds a Surprise Me exploration control, and further polishes cards/interactions without fabricating unavailable NFL data or changing the proven ingestion/database architecture.
+76.6 Complete UI: replaces dead/blank data areas with explicit verified-data states, clarifies missing values, adds accessible labels/focus/reduced-motion support, adds a Surprise Me exploration control, and further polishes cards/interactions without fabricating unavailable NFL data or changing the proven ingestion/database architecture.
 
 
-76.5 Live Transfer: live game packages are explicitly persisted by the collector, final games receive dedicated final hydration, and a game-transfer endpoint exposes stored snapshot/play/player/team-stat quality. Games and Game Graphs now use the same selected game feed, show transfer/archive status, shared box score, scoring timeline, game pulse, and synchronized five-second live refresh. Adds four warm accessible visual themes and motion polish without fabricating missing data.
+76.6 Live Transfer: live game packages are explicitly persisted by the collector, final games receive dedicated final hydration, and a game-transfer endpoint exposes stored snapshot/play/player/team-stat quality. Games and Game Graphs now use the same selected game feed, show transfer/archive status, shared box score, scoring timeline, game pulse, and synchronized five-second live refresh. Adds four warm accessible visual themes and motion polish without fabricating missing data.
 
 
-76.5 fixes live/archive box-score population by preserving ESPN label/name/abbreviation/displayName aliases and using normalized exact-first stat lookup. The box score now exposes verified coverage and explicitly lists provider fields not captured instead of blank values. Theme switching now applies a complete palette to root/body/shell/card/border/accent surfaces with four visibly distinct warm themes.
+76.6 fixes live/archive box-score population by preserving ESPN label/name/abbreviation/displayName aliases and using normalized exact-first stat lookup. The box score now exposes verified coverage and explicitly lists provider fields not captured instead of blank values. Theme switching now applies a complete palette to root/body/shell/card/border/accent surfaces with four visibly distinct warm themes.
 
 
-76.5 Experience Polish: replaces remaining generic dead-end placeholders with informative verified-data states, distinguishes live field position from archived final snapshots, adds persistent Comfortable/Compact density modes, graph value tooltips and bar animation, stronger theme-aware hover/focus states, and tighter responsive presentation. The 76.1 box-score alias fixes and 76.0 live/final persistence pipeline remain intact.
+76.6 Experience Polish: replaces remaining generic dead-end placeholders with informative verified-data states, distinguishes live field position from archived final snapshots, adds persistent Comfortable/Compact density modes, graph value tooltips and bar animation, stronger theme-aware hover/focus states, and tighter responsive presentation. The 76.1 box-score alias fixes and 76.0 live/final persistence pipeline remain intact.
 
 
-76.5 Game Intelligence: Games now includes an ATLAS momentum model (explicitly non-official), verified drive map, quarter lens, player spotlight, lifecycle integrity monitor, and automatic postgame report when a game reaches FINAL. Game Graphs also surfaces integrity status. /api/game-transfer now reports eight lifecycle checks covering storage, teams, team stats, players, plays, drives, snapshots, and final hydration. No fabricated provider stats and no destructive data changes.
+76.6 Game Intelligence: Games now includes an ATLAS momentum model (explicitly non-official), verified drive map, quarter lens, player spotlight, lifecycle integrity monitor, and automatic postgame report when a game reaches FINAL. Game Graphs also surfaces integrity status. /api/game-transfer now reports eight lifecycle checks covering storage, teams, team stats, players, plays, drives, snapshots, and final hydration. No fabricated provider stats and no destructive data changes.
 
 
-76.5 Franchise Intelligence: personalized favorite-team Home command panel, Team Hub 2.0 with stored record/team identity/recent timeline, Player Profile impact trend, Weekly Recap impact desk, improved command search shortcuts, and read-only ATLAS Data Doctor health diagnostics. Existing live/final ingestion and normalized database writes are unchanged.
+76.6 Franchise Intelligence: personalized favorite-team Home command panel, Team Hub 2.0 with stored record/team identity/recent timeline, Player Profile impact trend, Weekly Recap impact desk, improved command search shortcuts, and read-only ATLAS Data Doctor health diagnostics. Existing live/final ingestion and normalized database writes are unchanged.
 
 
-76.5 Prediction + Exploration: persistent 30-day model snapshots, power movement, pre-kickoff receipt grading, matchup lab, league strength map, player watchlist, Explain hooks, and recent model history supplied to Gemini. No sportsbook odds or betting features.
+76.6 Prediction + Exploration: persistent 30-day model snapshots, power movement, pre-kickoff receipt grading, matchup lab, league strength map, player watchlist, Explain hooks, and recent model history supplied to Gemini. No sportsbook odds or betting features.
+
+
+76.6 Live Intelligence: game previews, snapshot movement deltas, verified discoveries, Game Story 2.0, in-app notifications, settings panel, animation preference, and richer AI movement/discovery surfaces. Existing six-tab architecture and normalized live/final pipeline preserved.

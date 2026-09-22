@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="76.5"
-BUILD_NAME="ATLAS 76.5 PREDICTION + EXPLORATION"
+VERSION="76.6"
+BUILD_NAME="ATLAS 76.6 LIVE INTELLIGENCE"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1904,7 +1904,7 @@ def atlas_ai_ask(question):
       "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
     }
     url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
-    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.5"},method="POST")
+    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.6"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
@@ -1964,7 +1964,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas765.js').exists() and (ROOT/'atlas765.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas766.js').exists() and (ROOT/'atlas766.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2085,7 +2085,28 @@ class H(SimpleHTTPRequestHandler):
                     winner=max(ts,key=lambda x:int(x.get("score") or 0)).get("abbr");pick=norm_team_abbr(pred.get("pick") or pred.get("favorite") or pred.get("predicted_winner"))
                     receipts.append({"game_id":gid,"pick":pick,"winner":norm_team_abbr(winner),"correct":bool(pick and pick==norm_team_abbr(winner)),"snapshot_ts":pred_ts})
             correct=sum(1 for x in receipts if x.get("correct"))
-            return self.sendj({"ok":True,"snapshots":len(hist),"teams":teams,"receipts":receipts,"accuracy":{"graded":len(receipts),"correct":correct,"rate":round(correct/len(receipts)*100,1) if receipts else None},"updated":int(time.time())})
+            movement={}
+            for ab,rows in teams.items():
+                if rows:
+                    latest=rows[-1]; previous=rows[-2] if len(rows)>1 else latest
+                    movement[ab]={"strength":latest.get("strength"),"delta":round(float(latest.get("strength") or 0)-float(previous.get("strength") or 0),2),"projected_wins":latest.get("projected_wins"),"wins_delta":round(float(latest.get("projected_wins") or 0)-float(previous.get("projected_wins") or 0),2)}
+            return self.sendj({"ok":True,"snapshots":len(hist),"teams":teams,"movement":movement,"receipts":receipts,"accuracy":{"graded":len(receipts),"correct":correct,"rate":round(correct/len(receipts)*100,1) if receipts else None},"updated":int(time.time())})
+        if u.path=="/api/discoveries":
+            items=[]
+            for ab in TEAM_ABBRS:
+                rows=archive_trends(ab)
+                if len(rows)>=2:
+                    recent=rows[-5:]; wins=[]
+                    for x in recent:
+                        pf=float(x.get("points_for") or x.get("pf") or 0);pa=float(x.get("points_against") or x.get("pa") or 0);wins.append(pf>pa)
+                    streak=0
+                    for won in reversed(wins):
+                        if won:streak+=1
+                        else:break
+                    if streak>=2:items.append({"team":ab,"type":"streak","label":str(streak)+"-GAME WIN STREAK","detail":"Verified from stored completed-game scores."})
+                    scores=[float(x.get("points_for") or x.get("pf") or 0) for x in recent]
+                    if scores and scores[-1]>=max(scores) and scores[-1]>0:items.append({"team":ab,"type":"scoring","label":"RECENT-HIGH SCORING","detail":str(int(scores[-1]))+" points is the highest stored total in the latest "+str(len(scores))+" games."})
+            return self.sendj({"ok":True,"items":items[:20],"source":"stored completed-game trends"})
         if u.path=="/api/ai/status":return self.sendj(atlas_ai_status())
         if u.path=="/api/projections/rebuild":return self.sendj({"ok":False,"error":"AI snapshots rebuild automatically."},405)
         if u.path=="/api/archive-coverage":
@@ -2142,7 +2163,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas765.js","css":"atlas765.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas766.js","css":"atlas766.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

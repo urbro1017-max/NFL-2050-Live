@@ -1,3 +1,4 @@
+function mlbBroadcast60(g){let o=g?.offense||g?.linescore?.offense||g?.liveData?.linescore?.offense||{},b={1:!!(o.first||o.firstBase),2:!!(o.second||o.secondBase),3:!!(o.third||o.thirdBase)},ev=(g?.recent_plays||g?.plays||[]).map(p=>({inning:p.inning||p.about?.inning||"",text:p.description||p.result?.description||""})).filter(x=>x.text);return `<div class="broadcast60"><section>${ATLAS60.diamond(b)}</section><section><h3>PLAY TIMELINE</h3>${ATLAS60.eventTimeline(ev)}<button class="ask60 ask61" data-atlas-prompt="Explain this MLB game state using only verified ATLAS data.">EXPLAIN GAME</button></section></div>`}
 
 function atlasLineChart(rows,xKey,yKey,label){
  rows=(rows||[]).map(r=>({x:r?.[xKey],y:Number(r?.[yKey])})).filter(r=>r.x!=null&&Number.isFinite(r.y));

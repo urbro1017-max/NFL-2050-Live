@@ -1,4 +1,14 @@
 
+function mountNFLGameCast61(g){
+ let root=document.querySelector("main")||document.querySelector("#app");if(!root||!g)return;
+ let existing=document.getElementById("nflGameCast61");if(existing)existing.remove();
+ let host=document.createElement("section");host.id="nflGameCast61";host.innerHTML=nflBroadcast60(g);
+ let target=root.querySelector(".grid,.cards,.content")||root;target.prepend(host);
+ ATLAS60.attach(host)
+}
+
+function nflBroadcast60(g){let p=Number(g?.situation?.yardLine??g?.field_position??50),ev=(g?.plays||g?.recent_plays||[]).map(x=>({period:x.period||x.quarter||"",text:x.text||x.description||x.playText||""})).filter(x=>x.text);return `<section class="card full"><h3>GAMECAST 2.0</h3>${ATLAS60.field(p)}${ATLAS60.eventTimeline(ev)}</section>`}
+
 function nflMomentum53(g){let plays=g?.plays||g?.recent_plays||[];let vals=[];for(let p of plays){let y=Number(p?.yards??p?.yards_gained??p?.statYardage);if(Number.isFinite(y))vals.push(y)}return ATLAS53.spark(vals.slice(-20),{label:"RECENT PLAY YARDAGE FLOW",suffix:" YDS"})}
 function nflScorePulse53(g){let a=Number(g?.away?.score??g?.away_score),h=Number(g?.home?.score??g?.home_score);if(!Number.isFinite(a)||!Number.isFinite(h))return '<div class="empty">Score pulse waits for verified score data.</div>';return `<div class="scorepulse53"><div><span>${g?.away?.abbr||g?.away?.team||"AWAY"}</span><b>${a}</b></div><i></i><div><span>${g?.home?.abbr||g?.home?.team||"HOME"}</span><b>${h}</b></div></div>`}
 
@@ -162,3 +172,14 @@ async function render(){APP.innerHTML='<div class="boot"><div>A</div><b>ATLAS</b
 window.addEventListener('hashchange',()=>{state.route=(location.hash||'#home').slice(1).split('/')[0]||'home';render()});
 if('serviceWorker' in navigator)Promise.resolve();
 render();
+
+document.addEventListener("atlas:nfl-gamecast",e=>mountNFLGameCast61(e.detail));
+(function nflGameCastAuto61(){
+ let last="";
+ setInterval(()=>{try{
+   let path=location.hash||location.pathname;
+   if(!/graph/i.test(path))return;
+   let g=(typeof state!=="undefined"&&state?.game)||(typeof S!=="undefined"&&S?.game)||(typeof selectedGame!=="undefined"&&selectedGame);
+   if(!g)return;let id=String(g.id||g.game_id||g.event_id||"");if(id&&id!==last){last=id;mountNFLGameCast61(g)}
+ }catch{}},2500)
+})();

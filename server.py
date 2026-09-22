@@ -14,8 +14,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-5.4-LIVE-HOMEBASE"
-BUILD_NAME="ATLAS PWA 5.4 LIVE EXPERIENCE + UFC 1.4 + MLB 4.4 + NFL 76.6"
+VERSION="ATLAS-PWA-6.1-INTEGRATION-RELIABILITY"
+BUILD_NAME="ATLAS 6.1 INTEGRATION + RELIABILITY"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2477,6 +2477,37 @@ def atlas_homebase():
     except Exception as e:out["ufc"]={"ok":False,"events":[],"error":str(e)[:120]}
     return out
 
+def atlas_intelligence_feed():
+    items=[]
+    try:
+        p=mlb_power()
+        for r in (p.get("teams") or p.get("power") or [])[:5]:
+            team=r.get("team") or r.get("name"); strength=r.get("strength")
+            if team and strength is not None:items.append({"sport":"MLB","title":str(team)+" archive signal","detail":"ATLAS stored-data strength: "+str(strength)+".","receipt":["MLB persistent archive","ATLAS model output, not an official ranking"]})
+    except:pass
+    try:
+        d={'discoveries':[]}
+        for r in (d.get("discoveries") or [])[:5]:items.append({"sport":"NFL","title":r.get("title") or r.get("team") or "Stored-data signal","detail":r.get("detail") or r.get("text") or "","receipt":[r.get("source") or "stored completed-game trends"]})
+    except:pass
+    try:
+        e=ufc_events()
+        for r in (e.get("events") or [])[:3]:
+            if r.get("name"):items.append({"sport":"UFC","title":r.get("name"),"detail":r.get("date") or "UFCStats event record","receipt":["UFCStats event archive","No synthetic fight prediction"]})
+    except:pass
+    return {"ok":True,"generated":int(time.time()),"items":items[:12]}
+
+
+def atlas_integrity61():
+    checks={}
+    try:
+        checks["nfl_store"]={"ok":True,"player_rows":len(STORE.player_stat_rows() or []) if hasattr(STORE,"player_stat_rows") else None}
+    except Exception as e:checks["nfl_store"]={"ok":False,"error":str(e)[:120]}
+    try:checks["mlb_store"]={"ok":True,**MLB_STORE.counts()}
+    except Exception as e:checks["mlb_store"]={"ok":False,"error":str(e)[:120]}
+    checks["ufc_parser"]={"ok":callable(ufc_fight) and callable(ufc_events)}
+    checks["ai_config"]={"ok":True,"configured":bool(GEMINI_API_KEY)}
+    return {"ok":all(v.get("ok") for k,v in checks.items() if k!="ai_config"),"version":VERSION,"checks":checks,"time":int(time.time())}
+
 class H(SimpleHTTPRequestHandler):
     def __init__(self,*a,**k):super().__init__(*a,directory=str(ROOT),**k)
     def end_headers(self):
@@ -2505,6 +2536,12 @@ class H(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         u=urlparse(self.path);q=parse_qs(u.query)
+        if u.path=="/api/integrity":
+            try:return self.sendj(atlas_integrity61())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)
+        if u.path=="/api/intelligence-feed":
+            try:return self.sendj(atlas_intelligence_feed())
+            except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)
         if u.path=="/api/homebase":
             try:return self.sendj(atlas_homebase())
             except Exception as e:return self.sendj({"ok":False,"error":str(e)},500)

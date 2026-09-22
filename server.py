@@ -4,17 +4,17 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from urllib.request import Request,urlopen
-from urllib.parse import urlparse,parse_qs
+from urllib.parse import urlparse,parse_qs, quote
 from pathlib import Path
 
 HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).parent/"app"
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="74.4"
-BUILD_NAME="ATLAS 74.4 REFINED VISUALS"
-OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
-OPENAI_MODEL=os.environ.get("OPENAI_MODEL","gpt-5.4").strip()
+VERSION="75.1"
+BUILD_NAME="ATLAS 75.1 REFINED VISUALS"
+GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
+GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
 DBFILE=Path(os.environ.get("GRIDIRON_DB",str(Path(__file__).parent/"gridiron_atlas.db")))
 PROVIDER="ESPN_MULTI_SOURCE_FUSION"
@@ -1801,7 +1801,7 @@ def ai_snapshot_worker():
         time.sleep(AI_REFRESH_SECONDS)
 
 def atlas_ai_status():
-    return {"ok":True,"enabled":bool(OPENAI_API_KEY),"provider":"openai" if OPENAI_API_KEY else "atlas-local","model":OPENAI_MODEL if OPENAI_API_KEY else "ATLAS deterministic engine","role":"reasoning_layer","source_of_truth":"ATLAS normalized Postgres/database","version":VERSION}
+    return {"ok":True,"enabled":bool(GEMINI_API_KEY),"provider":"gemini" if GEMINI_API_KEY else "atlas-local","model":GEMINI_MODEL if GEMINI_API_KEY else "ATLAS deterministic engine","role":"reasoning_layer","source_of_truth":"ATLAS normalized Postgres/database","version":VERSION}
 
 def _atlas_ai_context(question):
     # Deliberately compact: the LLM reasons over ATLAS facts; it never becomes the stats database.
@@ -1837,30 +1837,39 @@ def atlas_ai_ask(question):
     if not question:return {"ok":False,"error":"Ask ATLAS a football question."}
     if len(question)>1200:return {"ok":False,"error":"Question is too long."}
     ctx=_atlas_ai_context(question)
-    if not OPENAI_API_KEY:
-        return {"ok":False,"enabled":False,"provider":"atlas-local","error":"OpenAI reasoning is not configured. Add OPENAI_API_KEY in Render Environment. ATLAS statistics and deterministic projections remain available.","context_ready":True}
+    if not GEMINI_API_KEY:
+        return {"ok":False,"enabled":False,"provider":"atlas-local","error":"Gemini reasoning is not configured. Add GEMINI_API_KEY in Render Environment. ATLAS statistics and deterministic projections remain available.","context_ready":True}
+    system=("You are ATLAS Intelligence, an NFL analytics assistant inside ATLAS. "
+            "The ATLAS database and deterministic model are the source of truth. "
+            "Explain football clearly and concisely. Never invent missing current facts. "
+            "Distinguish measured database facts from ATLAS projections. "
+            "Do not present sportsbook odds or betting advice. "
+            "Return useful analysis grounded only in the supplied ATLAS context.")
     payload={
-      "model":OPENAI_MODEL,
-      "reasoning":{"effort":"low"},
-      "instructions":"You are ATLAS Intelligence, an NFL analytics assistant inside ATLAS. The ATLAS database and deterministic model are the source of truth. Explain football clearly and concisely. Never invent missing current facts. Distinguish measured database facts from ATLAS projections. Do not present sportsbook odds or betting advice. Return useful analysis grounded only in the supplied ATLAS context.",
-      "input":[{"role":"user","content":[{"type":"input_text","text":"QUESTION:\n"+question+"\n\nATLAS_CONTEXT_JSON:\n"+json.dumps(ctx,separators=(',',':'))}]}],
-      "max_output_tokens":900
+      "systemInstruction":{"parts":[{"text":system}]},
+      "contents":[{"role":"user","parts":[{"text":"QUESTION:\\n"+question+"\\n\\nATLAS_CONTEXT_JSON:\\n"+json.dumps(ctx,separators=(',',':'))}]}],
+      "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
     }
-    req=Request("https://api.openai.com/v1/responses",data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+OPENAI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/74.4"},method="POST")
+    url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
+    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/75.1"},method="POST")
     t=time.perf_counter()
     try:
-        with urlopen(req,timeout=OPENAI_TIMEOUT) as r: data=json.loads(r.read().decode())
-        textout=data.get("output_text") or ""
-        if not textout:
-            chunks=[]
-            for item in data.get("output") or []:
-                for c in item.get("content") or []:
-                    if c.get("type") in ("output_text","text") and c.get("text"):chunks.append(c["text"])
-            textout="\n".join(chunks)
-        if not textout:return {"ok":False,"error":"ATLAS Intelligence returned no text.","provider":"openai"}
-        return {"ok":True,"answer":textout,"provider":"openai","model":OPENAI_MODEL,"latency_ms":round((time.perf_counter()-t)*1000,1),"grounding":"ATLAS_NORMALIZED_DB+ATLAS_MODEL","updated":int(time.time())}
+        with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
+        chunks=[]
+        for cand in data.get("candidates") or []:
+            for part in ((cand.get("content") or {}).get("parts") or []):
+                if part.get("text"):chunks.append(part["text"])
+        textout="\\n".join(chunks).strip()
+        if not textout:return {"ok":False,"error":"ATLAS Intelligence returned no text.","provider":"gemini","model":GEMINI_MODEL}
+        return {"ok":True,"answer":textout,"provider":"gemini","model":GEMINI_MODEL,"latency_ms":round((time.perf_counter()-t)*1000,1),"grounding":"ATLAS_NORMALIZED_DB+ATLAS_MODEL","updated":int(time.time())}
     except Exception as e:
-        return {"ok":False,"error":f"ATLAS Intelligence unavailable: {type(e).__name__}","provider":"openai","model":OPENAI_MODEL}
+        detail=str(e)
+        if hasattr(e,"read"):
+            try:
+                body=e.read().decode("utf-8","ignore");parsed=json.loads(body)
+                detail=(parsed.get("error") or {}).get("message") or detail
+            except Exception:pass
+        return {"ok":False,"error":"ATLAS Intelligence unavailable: "+detail[:240],"provider":"gemini","model":GEMINI_MODEL}
 
 def atlas_search(q):
     q=str(q or '').strip().lower()
@@ -1902,7 +1911,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas744.js').exists() and (ROOT/'atlas744.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas751.js').exists() and (ROOT/'atlas751.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2025,7 +2034,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas744.js","css":"atlas744.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas751.js","css":"atlas751.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

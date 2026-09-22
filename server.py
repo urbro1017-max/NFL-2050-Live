@@ -11,8 +11,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="76.2"
-BUILD_NAME="ATLAS 76.2 EXPERIENCE POLISH"
+VERSION="76.4"
+BUILD_NAME="ATLAS 76.4 FRANCHISE INTELLIGENCE"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1875,7 +1875,7 @@ def atlas_ai_ask(question):
       "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
     }
     url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
-    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.2"},method="POST")
+    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.4"},method="POST")
     t=time.perf_counter()
     try:
         with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
@@ -1935,7 +1935,7 @@ def _internal_diagnostics():
         except Exception as e: checks.append({"name":name,"ok":False,"detail":type(e).__name__+": "+str(e)[:90]})
     run("Database store",lambda:STORE.kind,lambda v:str(v))
     run("Team map",lambda:len(TEAM_IDS)==32,lambda v:"32 NFL team identifiers" if v else "Team map incomplete")
-    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas762.js').exists() and (ROOT/'atlas762.css').exists(),"Core UI assets present")
+    run("Static application",lambda:(ROOT/'index.html').exists() and (ROOT/'atlas764.js').exists() and (ROOT/'atlas764.css').exists(),"Core UI assets present")
     run("Verified baseline",lambda:len(VERIFIED_PLAYERS),lambda v:f"{v} embedded baseline rows")
     run("Collector state",lambda:LAST is not None,"Collector state object available")
     return checks
@@ -2009,6 +2009,20 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/archive-intelligence":return self.sendj(archive_intelligence())
         if u.path=="/api/stats-health":return self.sendj(unified_stats_health())
         if u.path=="/api/data-center":return self.sendj(unified_stats_health())
+        if u.path=="/api/data-doctor":
+            h=unified_stats_health()
+            pg=h.get("postgame") or {}
+            pipeline=h.get("pipeline") or []
+            finals=int(pg.get("final_games") or 0); with_players=int(pg.get("games_with_player_stats") or 0)
+            checks={
+                "database":bool(h.get("database")),
+                "team_storage":int(h.get("teams_with_stored_games") or 0)>0 or finals==0,
+                "player_storage":with_players>0 or finals==0,
+                "final_player_coverage":with_players>=finals if finals else True,
+                "pipeline_errors":not any(x.get("error") for x in pipeline),
+                "bootstrap":str((h.get("bootstrap") or {}).get("status") or "").lower()!="error"
+            }
+            return self.sendj({"ok":True,"checks":checks,"passed":sum(1 for v in checks.values() if v),"total":len(checks),"database":h.get("database"),"postgame":pg,"team_game_rows":h.get("team_game_rows"),"teams_with_stored_games":h.get("teams_with_stored_games"),"player_positions":h.get("player_positions"),"pipeline":pipeline[:12],"updated":h.get("updated")})
         if u.path=="/api/postgame-stats":
             if (q.get("repair") or ["0"])[0] in ("1","true"): repair_player_stats_once(12)
             return self.sendj(postgame_stats())
@@ -2036,7 +2050,18 @@ class H(SimpleHTTPRequestHandler):
             stored=STORE.game(gid) or {}
             snaps=STORE.snaps(gid)
             pipe=next((x for x in STORE.pipeline_rows() if str(x.get("game_id"))==gid),None)
-            return self.sendj({"ok":True,"id":gid,"stored":bool(stored),"state":stored.get("state"),"completed":bool(stored.get("completed")),"snapshots":len(snaps),"plays":len(stored.get("plays") or []),"drives":len(stored.get("drives") or []),"players":len(stored.get("players") or []),"team_stats":len(stored.get("team_stats") or {}),"quality":game_quality(stored) if stored else None,"pipeline":pipe,"database":STORE.kind})
+            quality=game_quality(stored) if stored else None
+            checks={
+                "stored":bool(stored),
+                "teams":len(stored.get("teams") or [])==2,
+                "team_stats":bool(stored.get("team_stats")),
+                "players":bool(stored.get("players")),
+                "plays":bool(stored.get("plays")),
+                "drives":bool(stored.get("drives")),
+                "snapshots":bool(snaps),
+                "final_hydrated":bool(not _is_final_game(stored) or (pipe and pipe.get("final") and pipe.get("teams_written",0)>=2))
+            }
+            return self.sendj({"ok":True,"id":gid,"stored":bool(stored),"state":stored.get("state"),"completed":bool(stored.get("completed")),"snapshots":len(snaps),"plays":len(stored.get("plays") or []),"drives":len(stored.get("drives") or []),"players":len(stored.get("players") or []),"team_stats":len(stored.get("team_stats") or {}),"quality":quality,"pipeline":pipe,"checks":checks,"integrity":{"passed":sum(1 for v in checks.values() if v),"total":len(checks),"ready":all(checks.values())},"database":STORE.kind})
         if u.path in ["/api/history","/api/snapshots"]:
             gid=(q.get("id") or [DEFAULT_GAME_ID])[0]
             if not str(gid).isdigit() or not (6 <= len(str(gid)) <= 20): return self.sendj({"ok":False,"error":"Invalid game id"},400)
@@ -2064,7 +2089,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
-        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas762.js","css":"atlas762.css","database":STORE.kind,"ai":atlas_ai_status()})
+        if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"atlas764.js","css":"atlas764.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))
         if u.path=="/api/collect":return self.sendj({"ok":False,"error":"Manual collection by GET is disabled; collector runs automatically."},405)
         if u.path=="/api/export.csv":

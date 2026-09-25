@@ -183,3 +183,55 @@ document.addEventListener("atlas:nfl-gamecast",e=>mountNFLGameCast61(e.detail));
    if(!g)return;let id=String(g.id||g.game_id||g.event_id||"");if(id&&id!==last){last=id;mountNFLGameCast61(g)}
  }catch{}},3000)
 })();
+
+
+/* ATLAS 7.1 — LIVE GAME EXPERIENCE */
+function liveGame71(g){
+  if(!g)return "";
+  const home=g.home||{},away=g.away||{},status=g.status||{};
+  const state=String(status.state||g.state||"").toLowerCase();
+  const isLive=state==="in"||state==="live"||String(status.type||"").toLowerCase().includes("progress");
+  const score=(x)=>x.score??x.points??"—";
+  const logo=(x)=>x.logo||x.team?.logo||"";
+  const abbr=(x)=>x.abbr||x.abbreviation||x.team?.abbreviation||"—";
+  const q=status.period||g.period||"—", clock=status.clock||status.displayClock||g.clock||"";
+  const situation=g.situation||g.drive?.situation||{};
+  const down=situation.downDistanceText||situation.shortDownDistanceText||g.downDistance||"";
+  const poss=situation.possessionText||g.possession||"";
+  const plays=(g.plays||g.recentPlays||g.recent_plays||[]).slice(-6).reverse();
+  const stats=g.team_stats||g.teamStats||g.stats||[];
+  const leaders=g.leaders||g.player_leaders||[];
+  const statRows=Array.isArray(stats)?stats.slice(0,10):Object.entries(stats||{}).slice(0,10).map(([name,value])=>({name,value}));
+  const momentum=(g.momentum||g.momentum_events||[]).slice(-8);
+  const freshness=g.updated_at||g.updatedAt||g.timestamp||"Live feed";
+  return `<section class="live71 ${isLive?"is-live":""}">
+    <div class="live71-top"><span class="live71-badge">${isLive?"● LIVE":"GAME CENTER"}</span><span>Verified feed · ${esc?esc(freshness):freshness}</span></div>
+    <div class="scoreboard71">
+      <div class="club71"><img src="${logo(away)}"><b>${abbr(away)}</b><strong>${score(away)}</strong></div>
+      <div class="state71"><b>${isLive?`Q${q} ${clock}`:(status.detail||status.shortDetail||g.status_text||"")}</b><span>${down}</span><span>${poss}</span></div>
+      <div class="club71"><strong>${score(home)}</strong><b>${abbr(home)}</b><img src="${logo(home)}"></div>
+    </div>
+    <div class="live71-grid">
+      <article class="live71-card field71"><h3>LIVE FIELD</h3>${typeof nflBroadcast60==="function"?nflBroadcast60(g):""}</article>
+      <article class="live71-card"><h3>WHAT JUST HAPPENED</h3><div class="plays71">${plays.length?plays.map((p,i)=>`<div class="${i===0?"latest":""}"><b>${p.clock||p.displayClock||""}</b><span>${p.text||p.description||p.play_text||"Verified play"}</span></div>`).join(""):`<div class="quiet71">Waiting for verified play-by-play…</div>`}</div></article>
+      <article class="live71-card"><h3>TEAM BATTLE</h3><div class="battle71">${statRows.length?statRows.map(s=>`<div><span>${s.name||s.label||s.displayName||"STAT"}</span><b>${s.away??s.awayValue??s.value??"—"}</b><i></i><b>${s.home??s.homeValue??"—"}</b></div>`).join(""):`<div class="quiet71">Verified team comparison is building…</div>`}</div></article>
+      <article class="live71-card"><h3>IMPACT PLAYERS</h3><div class="leaders71">${leaders.length?leaders.slice(0,6).map(x=>{let a=x.athlete||x.player||x;return `<div><img src="${a.headshot?.href||a.headshot||""}"><span><b>${a.displayName||a.name||x.name||"Player"}</b><small>${x.displayValue||x.value||x.stat||""}</small></span></div>`}).join(""):`<div class="quiet71">Player leaders appear when verified by the game feed.</div>`}</div></article>
+      <article class="live71-card wide71"><h3>GAME FLOW</h3><div class="flow71">${momentum.length?momentum.map(x=>`<span title="${x.text||x.description||""}">${x.team||x.abbr||"•"}</span>`).join(""):`<div class="quiet71">ATLAS momentum events will appear as the game develops.</div>`}</div></article>
+    </div>
+    <div class="live71-actions"><button onclick="location.hash='graphs'">FULL GAME GRAPHS</button><button class="ask61" data-atlas-prompt="Explain the current live NFL game using only verified ATLAS game data.">✦ ASK ATLAS ABOUT THIS GAME</button></div>
+  </section>`;
+}
+function mountLive71(){
+  try{
+    let path=location.hash||location.pathname;
+    if(!/graph|game/i.test(path))return;
+    let g=(typeof state!=="undefined"&&state?.game)||(typeof S!=="undefined"&&S?.game)||(typeof selectedGame!=="undefined"&&selectedGame);
+    if(!g)return;
+    let host=document.querySelector("main")||document.querySelector("#app");
+    if(!host)return;
+    let old=document.querySelector("#atlas-live71");
+    if(!old){old=document.createElement("div");old.id="atlas-live71";host.prepend(old)}
+    old.innerHTML=liveGame71(g);
+  }catch{}
+}
+document.addEventListener("DOMContentLoaded",()=>{try{ATLAS54.watch("live-game71",async()=>mountLive71(),2000)}catch{}});

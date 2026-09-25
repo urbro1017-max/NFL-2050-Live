@@ -1,4 +1,52 @@
 
+function atlas81CompactStats(){
+ document.querySelectorAll(".stats73 [class*=stat],.stats73 tr,.stats73 .row").forEach(r=>{
+   const t=(r.textContent||"").toLowerCase();
+   if(/\b(null|undefined|nan)\b/.test(t))r.remove();
+ });
+}
+
+
+/* ATLAS 8.1 — CLEAN DATA / ZERO NULL UI */
+function atlas81Bad(v){
+ if(v===null||v===undefined)return true;
+ const s=String(v).trim().toLowerCase();
+ return !s||["null","undefined","nan","n/a","none","--","[object object]"].includes(s);
+}
+function atlas81CleanText(root=document){
+ root.querySelectorAll("span,b,strong,small,p,td,th,i").forEach(el=>{
+   if(el.children.length)return;
+   if(atlas81Bad(el.textContent))el.textContent="—";
+ });
+}
+function atlas81HideEmpty(root=document){
+ root.querySelectorAll(".card,.metric,.stat,.impact72,.scoreTeam80,.glance72>div").forEach(el=>{
+   const t=(el.textContent||"").replace(/[—\s]/g,"");
+   const imgs=[...el.querySelectorAll("img")].filter(i=>i.getAttribute("src"));
+   if(!t&&!imgs.length)el.classList.add("atlas81-empty");
+ });
+}
+function atlas81Images(root=document){
+ root.querySelectorAll("img").forEach(img=>{
+   const src=img.getAttribute("src");
+   if(!src||atlas81Bad(src)){img.classList.add("atlas81-noimg");return}
+   img.loading="lazy"; img.decoding="async";
+   img.addEventListener("error",()=>{img.classList.add("atlas81-noimg");img.removeAttribute("src")},{once:true});
+ });
+}
+function atlas81Graphs(root=document){
+ root.querySelectorAll("svg").forEach(svg=>{
+   const txt=(svg.textContent||"").trim();
+   const marks=svg.querySelectorAll("path,polyline,line,rect,circle").length;
+   if(!txt&&marks<2)svg.closest(".card")?.classList.add("atlas81-empty");
+ });
+}
+function atlas81Prune(root=document){
+ atlas81CleanText(root);atlas81Images(root);atlas81Graphs(root);atlas81HideEmpty(root);
+ root.querySelectorAll(".atlas81-empty").forEach(x=>x.remove());
+}
+
+
 /* ATLAS 8.0 — NFL LIQUID INTELLIGENCE */
 function atlas80GlassTitle(kicker,title,copy="",actions=""){
  return `<div class="glassTitle80"><div><span>${kicker}</span><h1>${title}</h1>${copy?`<p>${copy}</p>`:""}</div>${actions?`<div class="glassActions80">${actions}</div>`:""}</div>`;
@@ -11,8 +59,8 @@ function atlas80ScoreCard(g){
  const [a,h]=sides(g);
  return `<button class="scoreCard80" data-game80="${E(g.id)}">
    <div class="scoreMeta80">${atlas80Status(g)}<span>${E(g.date||g.status||"")}</span></div>
-   <div class="scoreTeam80"><img src="${E(a.logo||logo(a.abbr))}"><b>${E(a.abbr)}</b><strong>${E(a.score??"")}</strong></div>
-   <div class="scoreTeam80"><img src="${E(h.logo||logo(h.abbr))}"><b>${E(h.abbr)}</b><strong>${E(h.score??"")}</strong></div>
+   <div class="scoreTeam80"><img src="${E(a.logo||logo(a.abbr)||"")}"><b>${E(a.abbr||"TEAM")}</b>${a.score!==null&&a.score!==undefined&&a.score!==""?`<strong>${E(a.score)}</strong>`:""}</div>
+   <div class="scoreTeam80"><img src="${E(h.logo||logo(h.abbr)||"")}"><b>${E(h.abbr||"TEAM")}</b>${h.score!==null&&h.score!==undefined&&h.score!==""?`<strong>${E(h.score)}</strong>`:""}</div>
  </button>`;
 }
 function atlas80LeagueStrip(games){
@@ -55,14 +103,14 @@ function atlas72Broadcast(g){
   return `<section class="broadcast72 ${live?"livepulse72":""}">
    <div class="broadcast72bar"><b>${live?"● LIVE":"GAME CENTER"}</b><span>${detail||"Verified game feed"}</span><i>ATLAS GAME NIGHT · 7.2.1</i></div>
    <div class="score72">
-    <div class="side72"><img src="${logo(A)}"><span><b>${ab(A)}</b><small>AWAY</small></span><strong>${score(A)}</strong></div>
+    <div class="side72"><img src="${logo(A)||logo(ab(A))||""}"><span><b>${ab(A)}</b><small>AWAY</small></span><strong>${score(A)}</strong></div>
     <div class="center72"><b>${q?`Q${q}`:""} ${clock||""}</b><span>${down||""}</span><span>${poss||""}</span></div>
-    <div class="side72 home72"><strong>${score(H)}</strong><span><b>${ab(H)}</b><small>HOME</small></span><img src="${logo(H)}"></div>
+    <div class="side72 home72"><strong>${score(H)}</strong><span><b>${ab(H)}</b><small>HOME</small></span><img src="${logo(H)||logo(ab(H))||""}"></div>
    </div>
    <div class="ticker72"><b>NOW</b><span>${latest?.text||latest?.description||detail||"Waiting for the next verified game event."}</span></div>
    <div class="field72"><div class="first72" style="left:${Math.min(94,pct+10)}%"></div><div class="ball72" style="left:${pct}%">◆</div><div class="yardnums72"><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>40</span><span>30</span><span>20</span><span>10</span></div><div class="fieldtext72"><b>${down||"FIELD POSITION"}</b><span>${poss||"Verified situation updates with the game feed"}</span></div></div>
    <div class="glance72">
-    <div><span>POSSESSION</span><b>${poss||"—"}</b></div><div><span>SITUATION</span><b>${down||"—"}</b></div><div><span>LAST SCORE</span><b>${scoring.length?(scoring[scoring.length-1].text||scoring[scoring.length-1].description||"SCORING PLAY"):"—"}</b></div><div><span>KEY EVENTS</span><b>${keyPlays.length}</b></div>
+    ${poss?`<div><span>POSSESSION</span><b>${poss}</b></div>`:""}${down?`<div><span>SITUATION</span><b>${down}</b></div>`:""}${scoring.length?`<div><span>LAST SCORE</span><b>${scoring[scoring.length-1].text||scoring[scoring.length-1].description||"SCORING PLAY"}</b></div>`:""}${keyPlays.length?`<div><span>KEY EVENTS</span><b>${keyPlays.length}</b></div>`:""}
    </div>
    <div class="dash72">
     <article class="feature72"><h3>WHAT JUST HAPPENED</h3><div class="plays72">${plays.length?plays.map((p,i)=>`<div class="${i===0?"hot72":""}"><b>${p.clock?.displayValue||p.clock||p.displayClock||""}</b><span>${p.text||p.description||p.play_text||"Verified play"}</span></div>`).join(""):`<p class="wait72">Waiting for verified play-by-play.</p>`}</div></article>
@@ -121,7 +169,7 @@ function logo(ab){ab=AB(ab);return state.teams.find(t=>AB(t.abbr||t.abbreviation
 function sides(g){let cs=A(g?.competitors||g?.teams||g?.boxscore?.teams);if(cs.length>=2){let away=cs.find(x=>x.homeAway==='away')||cs[0],home=cs.find(x=>x.homeAway==='home')||cs[1];const cv=x=>({abbr:AB(x.abbr||x.abbreviation||x.team?.abbreviation),score:x.score??x.points??x.team?.score,logo:x.logo||x.team?.logo});return [cv(away),cv(home)]}return [{abbr:AB(g?.away?.abbr||g?.awayTeam?.abbr),score:g?.away?.score,logo:g?.away?.logo},{abbr:AB(g?.home?.abbr||g?.homeTeam?.abbr),score:g?.home?.score,logo:g?.home?.logo}]}
 function gameState(g){const s=String(g?.state||g?.status||'').toLowerCase();if(g?.completed||s.includes('final')||s==='post')return 'FINAL';if(s==='in'||s.includes('quarter')||s.includes('half'))return 'LIVE';return g?.status||g?.date||'UPCOMING'}
 function nav(){return [['home','⌂','Home'],['games','◉','Games'],['teams','◇','Teams'],['graphs','⌁','Game Center'],['recap','▤','League Pulse'],['ai','✦','ATLAS AI']]}
-function shell(content,title='COMMAND CENTER'){APP.innerHTML=`<div class="atlas liquid80 theme-${E(prefs.theme)} density-${E(prefs.density)}"><div class="aurora80 a1"></div><div class="aurora80 a2"></div><div class="noise80"></div><aside class="rail"><div class="brand"><div class="brandmark">A</div><div><b>ATLAS</b><small>NFL INTELLIGENCE</small></div></div><nav>${nav().map(([r,i,l])=>`<button data-route="${r}" aria-label="${E(l)}" title="${E(l)}" class="${state.route===r?'active':''}"><i>${i}</i><span>${l}</span></button>`).join('')}</nav><footer><span><i></i> LIVE DATA</span><small>ATLAS 8.0</small></footer></aside><header class="topbar"><div><span>ATLAS /</span> ${E(title)}</div><div class="search">⌕ <span>Search teams, games, players</span><kbd>⌘K</kbd></div><button class="icon766" id="notify766" aria-label="ATLAS notifications" title="Notifications">◉</button><button class="icon766" id="settings766" aria-label="ATLAS settings" title="Settings">⚙</button><button class="density762" id="density762" aria-label="Change information density" title="Change information density">${prefs.density==='compact'?'▦ COMPACT':'▤ COMFORT'}</button><button class="theme760" id="theme760" aria-label="Change ATLAS color theme" title="Change color theme">◐ THEME · ${E(prefs.theme.toUpperCase())}</button><div class="season">2026 REGULAR SEASON</div><div class="user">A</div></header><main class="stage">${content}</main>${atlas80CommandDock()}</div>`;document.body.dataset.theme760=prefs.theme;document.documentElement.dataset.theme760=prefs.theme;document.querySelectorAll('[data-route]').forEach(b=>b.onclick=()=>go(b.dataset.route));atlas80BindQuick();document.getElementById('theme760')?.addEventListener('click',()=>{const themes=['ember','sunset','plum','gold'];prefs.theme=themes[(themes.indexOf(prefs.theme)+1)%themes.length];LS74.set('atlasTheme760',prefs.theme);document.body.dataset.theme760=prefs.theme;document.documentElement.dataset.theme760=prefs.theme;render()});document.getElementById('density762')?.addEventListener('click',()=>{prefs.density=prefs.density==='compact'?'comfortable':'compact';LS74.set('atlasDensity762',prefs.density);render()});document.getElementById('notify766')?.addEventListener('click',async()=>{let [h,d]=await Promise.all([api('/api/model-history',5000).catch(()=>({})),api('/api/discoveries',5000).catch(()=>({}))]);let wrap=document.createElement('div');wrap.className='overlay766';wrap.innerHTML=notificationPanel766(notifications766(h,d));wrap.onclick=e=>{if(e.target===wrap)wrap.remove()};document.body.appendChild(wrap)});document.getElementById('settings766')?.addEventListener('click',()=>{let wrap=document.createElement('div');wrap.className='overlay766';wrap.innerHTML=settingsPanel766();document.body.appendChild(wrap);wrap.querySelector('#settingsClose766').onclick=()=>wrap.remove();wrap.querySelector('#saveSettings766').onclick=()=>{prefs.favorite=AB(wrap.querySelector('#favSet766').value)||prefs.favorite;prefs.landing=wrap.querySelector('#landing766').value;prefs.animations=wrap.querySelector('#anim766').checked;LS74.set('atlasFavorite74',prefs.favorite);LS74.set('atlasLanding766',prefs.landing);LS74.set('atlasAnimations766',prefs.animations?'1':'0');document.body.classList.toggle('reduce766',!prefs.animations);wrap.remove();render()}})}
+function shell(content,title='COMMAND CENTER'){APP.innerHTML=`<div class="atlas liquid80 theme-${E(prefs.theme)} density-${E(prefs.density)}"><div class="aurora80 a1"></div><div class="aurora80 a2"></div><div class="noise80"></div><aside class="rail"><div class="brand"><div class="brandmark">A</div><div><b>ATLAS</b><small>NFL INTELLIGENCE</small></div></div><nav>${nav().map(([r,i,l])=>`<button data-route="${r}" aria-label="${E(l)}" title="${E(l)}" class="${state.route===r?'active':''}"><i>${i}</i><span>${l}</span></button>`).join('')}</nav><footer><span><i></i> LIVE DATA</span><small>ATLAS 8.1</small></footer></aside><header class="topbar"><div><span>ATLAS /</span> ${E(title)}</div><div class="search">⌕ <span>Search teams, games, players</span><kbd>⌘K</kbd></div><button class="icon766" id="notify766" aria-label="ATLAS notifications" title="Notifications">◉</button><button class="icon766" id="settings766" aria-label="ATLAS settings" title="Settings">⚙</button><button class="density762" id="density762" aria-label="Change information density" title="Change information density">${prefs.density==='compact'?'▦ COMPACT':'▤ COMFORT'}</button><button class="theme760" id="theme760" aria-label="Change ATLAS color theme" title="Change color theme">◐ THEME · ${E(prefs.theme.toUpperCase())}</button><div class="season">2026 REGULAR SEASON</div><div class="user">A</div></header><main class="stage">${content}</main>${atlas80CommandDock()}</div>`;document.body.dataset.theme760=prefs.theme;document.documentElement.dataset.theme760=prefs.theme;document.querySelectorAll('[data-route]').forEach(b=>b.onclick=()=>go(b.dataset.route));atlas80BindQuick();requestAnimationFrame(()=>{atlas81Prune(APP);atlas81CompactStats()});document.getElementById('theme760')?.addEventListener('click',()=>{const themes=['ember','sunset','plum','gold'];prefs.theme=themes[(themes.indexOf(prefs.theme)+1)%themes.length];LS74.set('atlasTheme760',prefs.theme);document.body.dataset.theme760=prefs.theme;document.documentElement.dataset.theme760=prefs.theme;render()});document.getElementById('density762')?.addEventListener('click',()=>{prefs.density=prefs.density==='compact'?'comfortable':'compact';LS74.set('atlasDensity762',prefs.density);render()});document.getElementById('notify766')?.addEventListener('click',async()=>{let [h,d]=await Promise.all([api('/api/model-history',5000).catch(()=>({})),api('/api/discoveries',5000).catch(()=>({}))]);let wrap=document.createElement('div');wrap.className='overlay766';wrap.innerHTML=notificationPanel766(notifications766(h,d));wrap.onclick=e=>{if(e.target===wrap)wrap.remove()};document.body.appendChild(wrap)});document.getElementById('settings766')?.addEventListener('click',()=>{let wrap=document.createElement('div');wrap.className='overlay766';wrap.innerHTML=settingsPanel766();document.body.appendChild(wrap);wrap.querySelector('#settingsClose766').onclick=()=>wrap.remove();wrap.querySelector('#saveSettings766').onclick=()=>{prefs.favorite=AB(wrap.querySelector('#favSet766').value)||prefs.favorite;prefs.landing=wrap.querySelector('#landing766').value;prefs.animations=wrap.querySelector('#anim766').checked;LS74.set('atlasFavorite74',prefs.favorite);LS74.set('atlasLanding766',prefs.landing);LS74.set('atlasAnimations766',prefs.animations?'1':'0');document.body.classList.toggle('reduce766',!prefs.animations);wrap.remove();render()}})}
 function go(r,extra={}){Object.assign(state,extra);state.route=r;location.hash=r;render()}
 let coreStarted=false,coreReady=null;
 function startCore(){
@@ -256,7 +304,7 @@ async function teams(){await core();let team=AB(state.team||state.teams[0]?.abbr
     }
   }catch(_e){}
 }
-async function graphs(){await core();if(!state.game)state.game=state.games.find(x=>gameState(x)==='LIVE')||state.games[0];if(state.game?.id)state.game=await api('/api/game?id='+state.game.id,gameState(state.game)==='LIVE'?3500:10000).catch(()=>state.game);const g=state.game,transfer=g?.id?await api('/api/game-transfer?id='+g.id,2500).catch(()=>null):null,[a,h]=g?sides(g):[{},{}],plays=A(g?.plays),drives=A(g?.drives),q=[1,2,3,4].map(n=>({k:'Q'+n,v:plays.filter(p=>N(p.period)===n&&p.scoringPlay).length})),driveRows=drives.slice(-12).map((d,i)=>({k:'D'+(i+1),v:N(d.plays||d.play_count)}));shell(`<div class="page-title"><div><span>GAME GRAPHS</span><h1>THE SHAPE OF<br>ONE GAME.</h1><p>Only data returned for the selected matchup.</p></div><select id="gameSelect" aria-label="Choose NFL game">${state.games.map(x=>{const[x1,x2]=sides(x);return `<option value="${E(x.id)}" ${String(x.id)===String(g?.id)?'selected':''}>${E(x1.abbr)} vs ${E(x2.abbr)} · ${E(gameState(x))}</option>`}).join('')}</select></div>${g?`<section class="matchup compact"><div><img src="${E(a.logo||logo(a.abbr))}"><span>${E(a.abbr)}</span><b>${E(a.score)}</b></div><center><small>${E(gameState(g))}</small></center><div><b>${E(h.score)}</b><span>${E(h.abbr)}</span><img src="${E(h.logo||logo(h.abbr))}"></div></section>${field73(g)}${transferBadge760(transfer,g)}${integrity763(transfer)}<section class="card stats73"><header><div><span>SHARED GAME DATA</span><h2>Live / archived box score</h2></div><small>SAME GAME FEED</small></header>${usefulStats75(g)}</section>${scoringTimeline760(g)}<section class="dashboard two"><article class="card"><header><div><span>SCORING BY QUARTER</span><h2>Scoring events</h2></div></header>${bars(q,4)}</article><article class="card"><header><div><span>DRIVE WORKLOAD</span><h2>Plays per drive</h2></div></header>${bars(driveRows,12)}</article></section><section class="card"><header><div><span>GAME MOMENTUM</span><h2>Scoring progression</h2></div></header>${line(plays.filter(p=>p.scoringPlay).map((_,i)=>i+1))}</section><section class="dashboard two visual72">${chartCard('Quarter scoring distribution','SCORING SHAPE',donut72(q))}${chartCard('Drive workload trend','DRIVE RHYTHM',line(driveRows.map(x=>x.v)))}</section>`:dataState('Choose a game','Select a matchup to open its ATLAS command center.')}`,'GAME GRAPHS');document.querySelector('.search')?.addEventListener('click',command72);document.getElementById('gameSelect')?.addEventListener('change',e=>{state.game=state.games.find(x=>String(x.id)===String(e.target.value));graphs()});if(g&&gameState(g)==='LIVE'){clearTimeout(window.__atlasGraphs75);window.__atlasGraphs75=setTimeout(()=>{cache.delete('/api/game?id='+g.id);cache.delete('/api/game-transfer?id='+g.id);if(state.route==='graphs')graphs()},5000)}
+async function graphs(){await core();if(!state.game)state.game=state.games.find(x=>gameState(x)==='LIVE')||state.games[0];if(state.game?.id)state.game=await api('/api/game?id='+state.game.id,gameState(state.game)==='LIVE'?3500:10000).catch(()=>state.game);const g=state.game,transfer=g?.id?await api('/api/game-transfer?id='+g.id,2500).catch(()=>null):null,[a,h]=g?sides(g):[{},{}],plays=A(g?.plays),drives=A(g?.drives),q=[1,2,3,4].map(n=>({k:'Q'+n,v:plays.filter(p=>N(p.period)===n&&p.scoringPlay).length})),driveRows=drives.slice(-12).map((d,i)=>({k:'D'+(i+1),v:N(d.plays||d.play_count)}));shell(`<div class="page-title"><div><span>GAME GRAPHS</span><h1>THE SHAPE OF<br>ONE GAME.</h1><p>Only data returned for the selected matchup.</p></div><select id="gameSelect" aria-label="Choose NFL game">${state.games.map(x=>{const[x1,x2]=sides(x);return `<option value="${E(x.id)}" ${String(x.id)===String(g?.id)?'selected':''}>${E(x1.abbr)} vs ${E(x2.abbr)} · ${E(gameState(x))}</option>`}).join('')}</select></div>${g?`<section class="matchup compact"><div><img src="${E(a.logo||logo(a.abbr))}"><span>${E(a.abbr)}</span><b>${E(a.score)}</b></div><center><small>${E(gameState(g))}</small></center><div><b>${E(h.score)}</b><span>${E(h.abbr)}</span><img src="${E(h.logo||logo(h.abbr))}"></div></section>${field73(g)}${transferBadge760(transfer,g)}${integrity763(transfer)}<section class="card stats73"><header><div><span>SHARED GAME DATA</span><h2>Live / archived box score</h2></div><small>SAME GAME FEED</small></header>${usefulStats75(g)}</section>${scoringTimeline760(g)}<section class="dashboard two"><article class="card"><header><div><span>SCORING BY QUARTER</span><h2>Scoring events</h2></div></header>${bars(q,4)}</article><article class="card"><header><div><span>DRIVE WORKLOAD</span><h2>Plays per drive</h2></div></header>${bars(driveRows,12)}</article></section><section class="card"><header><div><span>GAME MOMENTUM</span><h2>Scoring progression</h2></div></header>${plays.filter(p=>p.scoringPlay).length>1?line(plays.filter(p=>p.scoringPlay).map((_,i)=>i+1)):'<p class="cleanEmpty81">Momentum visualization appears after multiple verified scoring events.</p>'}</section><section class="dashboard two visual72">${q.some(x=>N(x.v)>0)?chartCard('Quarter scoring distribution','SCORING SHAPE',donut72(q)):''}${driveRows.some(x=>N(x.v)>0)?chartCard('Drive workload trend','DRIVE RHYTHM',line(driveRows.map(x=>x.v))):''}</section>`:dataState('Choose a game','Select a matchup to open its ATLAS command center.')}`,'GAME GRAPHS');document.querySelector('.search')?.addEventListener('click',command72);document.getElementById('gameSelect')?.addEventListener('change',e=>{state.game=state.games.find(x=>String(x.id)===String(e.target.value));graphs()});if(g&&gameState(g)==='LIVE'){clearTimeout(window.__atlasGraphs75);window.__atlasGraphs75=setTimeout(()=>{cache.delete('/api/game?id='+g.id);cache.delete('/api/game-transfer?id='+g.id);if(state.route==='graphs')graphs()},5000)}
   // ATLAS 7.2 is mounted by the actual Game Graphs renderer, not by a DOM polling guess.
   try {
     const _atlas72Host=document.querySelector("main")||document.querySelector("#app");

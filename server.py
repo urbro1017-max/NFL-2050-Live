@@ -24,8 +24,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-8.6-GAMEVIEW"
-BUILD_NAME="ATLAS 8.6 GAMEVIEW"
+VERSION="ATLAS-PWA-8.7-POLISHED"
+BUILD_NAME="ATLAS 8.7 POLISHED"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -1921,28 +1921,31 @@ def atlas_ai_ask(question):
     payload={
       "systemInstruction":{"parts":[{"text":system}]},
       "contents":[{"role":"user","parts":[{"text":"QUESTION:\\n"+question+"\\n\\nATLAS_CONTEXT_JSON:\\n"+json.dumps(ctx,separators=(',',':'))}]}],
-      "generationConfig":{"maxOutputTokens":900,"temperature":0.25}
+      "generationConfig":{"maxOutputTokens":650,"temperature":0.2}
     }
-    url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(GEMINI_MODEL,safe="")+":generateContent"
-    req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/76.6"},method="POST")
-    t=time.perf_counter()
-    try:
-        with urlopen(req,timeout=OPENAI_TIMEOUT) as r:data=json.loads(r.read().decode())
-        chunks=[]
-        for cand in data.get("candidates") or []:
-            for part in ((cand.get("content") or {}).get("parts") or []):
-                if part.get("text"):chunks.append(part["text"])
-        textout="\\n".join(chunks).strip()
-        if not textout:return {"ok":False,"error":"ATLAS Intelligence returned no text.","provider":"gemini","model":GEMINI_MODEL}
-        return {"ok":True,"answer":textout,"provider":"gemini","model":GEMINI_MODEL,"latency_ms":round((time.perf_counter()-t)*1000,1),"grounding":"ATLAS_NORMALIZED_DB+ATLAS_MODEL","updated":int(time.time())}
-    except Exception as e:
-        detail=str(e)
-        if hasattr(e,"read"):
-            try:
-                body=e.read().decode("utf-8","ignore");parsed=json.loads(body)
-                detail=(parsed.get("error") or {}).get("message") or detail
-            except Exception:pass
-        return {"ok":False,"error":"ATLAS Intelligence unavailable: "+detail[:240],"provider":"gemini","model":GEMINI_MODEL}
+    models=[]
+    for m in [GEMINI_MODEL,"gemini-2.5-flash","gemini-2.0-flash"]:
+        if m and m not in models:models.append(m)
+    t=time.perf_counter();last_detail="provider unavailable"
+    for model in models:
+        url="https://generativelanguage.googleapis.com/v1beta/models/"+quote(model,safe="")+":generateContent"
+        req=Request(url,data=json.dumps(payload).encode(),headers={"x-goog-api-key":GEMINI_API_KEY,"Content-Type":"application/json","User-Agent":"ATLAS/8.7"},method="POST")
+        try:
+            with urlopen(req,timeout=min(OPENAI_TIMEOUT,12)) as r:data=json.loads(r.read().decode())
+            chunks=[]
+            for cand in data.get("candidates") or []:
+                for part in ((cand.get("content") or {}).get("parts") or []):
+                    if part.get("text"):chunks.append(part["text"])
+            textout="\\n".join(chunks).strip()
+            if textout:return {"ok":True,"answer":textout,"provider":"gemini","model":model,"latency_ms":round((time.perf_counter()-t)*1000,1),"grounding":"ATLAS_NORMALIZED_DB+ATLAS_MODEL","updated":int(time.time())}
+            last_detail="Provider returned no text."
+        except Exception as e:
+            last_detail=str(e)
+            if hasattr(e,"read"):
+                try:
+                    body=e.read().decode("utf-8","ignore");parsed=json.loads(body);last_detail=(parsed.get("error") or {}).get("message") or last_detail
+                except Exception:pass
+    return {"ok":False,"error":"Ask ATLAS unavailable: "+last_detail[:220],"provider":"gemini","models_tried":models}
 
 def atlas_search(q):
     q=str(q or '').strip().lower()

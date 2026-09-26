@@ -9,13 +9,23 @@ from urllib.parse import urlparse,parse_qs, quote
 from pathlib import Path
 from html.parser import HTMLParser
 from html import unescape
+PROVIDER_FAILURES={}
+def provider_allowed(label):
+    x=PROVIDER_FAILURES.get(label)
+    return not x or x.get("until",0)<=time.time()
+def provider_fail(label):
+    x=PROVIDER_FAILURES.setdefault(label,{"count":0,"until":0});x["count"]+=1
+    if x["count"]>=3:x["until"]=time.time()+20
+def provider_ok(label):
+    PROVIDER_FAILURES.pop(label,None)
+
 
 HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).parent/"app"
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-8.5-PRIME"
-BUILD_NAME="ATLAS 8.5 PRIME"
+VERSION="ATLAS-PWA-8.6-GAMEVIEW"
+BUILD_NAME="ATLAS 8.6 GAMEVIEW"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -67,15 +77,18 @@ def fetch(u,label="ESPN"):
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
     })
+    if not provider_allowed(label): raise RuntimeError(f"{label}: temporary provider cooldown")
     last_error=None
     for attempt in range(2):
         try:
             with urlopen(req,timeout=8) as r:
                 LAST["endpoint"]=label
+                provider_ok(label)
                 return json.loads(r.read().decode())
         except Exception as e:
             last_error=e
             if attempt==0: time.sleep(0.18)
+    provider_fail(label)
     LAST["endpoint"]=label
     LAST["error"]=f"{label}: {type(last_error).__name__}: {last_error}"
     raise last_error

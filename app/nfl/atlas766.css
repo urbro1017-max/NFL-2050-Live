@@ -386,3 +386,17 @@ select{background:#121213!important;color:#eee!important;border:1px solid #fffff
 .page-title h1{letter-spacing:-.05em!important}
 @media(max-width:760px){.dashboard.two,.dashboard.three{grid-template-columns:1fr!important}.metrics{grid-template-columns:1fr 1fr!important}.stage{padding-left:10px!important;padding-right:10px!important}.side72 strong{font-size:36px!important}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* ATLAS 8.3 Sunday Command */
+.sunday83{margin:12px 0;padding:14px;background:#0d0d0e;border:1px solid #ffffff12;border-radius:14px}.sunday83 header{display:flex;justify-content:space-between;align-items:end;padding-bottom:10px;border-bottom:1px solid #ffffff0b;margin-bottom:10px}.sunday83 header span{font-size:8px;letter-spacing:.15em;color:#d5aa67}.sunday83 header h2{font-size:21px;margin:3px 0 0}.sunday83 header>b{font-size:8px;color:#8d8782}.sunGrid83{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.sunGame83{text-align:left;background:#111112;border:1px solid #ffffff0c;border-radius:10px;color:#f5f1eb;padding:10px}.sunGame83.live83{border-color:#d8786150}.sunGame83>div:not(.sunTop83){display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:7px;margin:6px 0}.sunGame83 img{width:26px;height:26px;object-fit:contain}.sunGame83 span{font-size:10px;font-weight:800}.sunGame83 strong{font-size:18px}.sunTop83{display:flex;gap:7px;font-size:7px}.sunTop83 b{color:#d87861}.sunTop83 i{font-style:normal;color:#d5aa67}.sunGame83 small{display:block;border-top:1px solid #ffffff09;margin-top:8px;padding-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#99918b}@media(max-width:1050px){.sunGrid83{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){.sunGrid83{grid-template-columns:1fr}}
+
+/* ATLAS 8.4 NFL refinement */
+.stage{max-width:1420px!important}.page-title{margin-bottom:18px!important}.page-title p{max-width:620px!important}
+.hero{min-height:330px!important;padding:38px 42px!important}.hero-copy{max-width:700px!important}.hero-copy p{max-width:560px!important}
+.dashboard{gap:10px!important;margin-top:10px!important}.card{padding:16px!important}.card header{margin-bottom:12px!important}
+.metrics{gap:8px!important;margin:10px 0!important}.metrics article{padding:13px!important}.metrics article b{font-size:24px!important}
+.leader-list>div,.power-list>button,.score-row{min-height:48px!important}
+.sunday83{padding:12px!important}.sunGrid83{gap:6px!important}.sunGame83{padding:9px!important}.sunGame83 small{font-size:7px!important}
+.broadcast72{overflow:hidden!important}.score72{padding-top:20px!important;padding-bottom:20px!important}.dash72{gap:8px!important}
+.card svg{max-height:220px!important}.confidence74{opacity:.72!important}
+@media(max-width:760px){.hero{min-height:270px!important;padding:28px 22px!important}.hero-art{opacity:.35!important}.card{padding:13px!important}.metrics article b{font-size:21px!important}}

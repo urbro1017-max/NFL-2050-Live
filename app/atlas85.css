@@ -1,0 +1,12 @@
+
+/* ATLAS 8.5 PRIME */
+:root{--prime-bg:#070708;--prime-surface:#101011;--prime-line:rgba(255,255,255,.07);--prime-text:#f6f2ec;--prime-muted:#8b8782}
+body{background:var(--prime-bg)!important;color:var(--prime-text)!important}
+.card,.panel,.matchup{box-shadow:0 14px 44px rgba(0,0,0,.22)!important;border-color:var(--prime-line)!important}
+.card header,.panel header{padding-bottom:10px!important}
+.card p,.panel p{max-width:70ch}
+button{transition:background-color .16s ease,border-color .16s ease,color .16s ease!important}
+img{content-visibility:auto}
+svg{shape-rendering:geometricPrecision}
+@media(min-width:900px){.stage,main{content-visibility:auto}}
+@media(max-width:760px){.card,.panel{box-shadow:0 8px 26px rgba(0,0,0,.2)!important}}

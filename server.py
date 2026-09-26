@@ -1,5 +1,5 @@
 import urllib.parse
-import json,os,time,sqlite3,csv,io,threading,re
+import json,os,time,sqlite3,csv,io,threading,re,gzip
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -14,8 +14,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-8.2.1-RECOVERY"
-BUILD_NAME="ATLAS 8.2.1 RECOVERY"
+VERSION="ATLAS-PWA-8.5-PRIME"
+BUILD_NAME="ATLAS 8.5 PRIME"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -67,14 +67,18 @@ def fetch(u,label="ESPN"):
         "Accept-Language":"en-US,en;q=0.9",
         "Referer":"https://www.espn.com/",
     })
-    try:
-        with urlopen(req,timeout=12) as r:
-            LAST["endpoint"]=label
-            return json.loads(r.read().decode())
-    except Exception as e:
-        LAST["endpoint"]=label
-        LAST["error"]=f"{label}: {type(e).__name__}: {e}"
-        raise
+    last_error=None
+    for attempt in range(2):
+        try:
+            with urlopen(req,timeout=8) as r:
+                LAST["endpoint"]=label
+                return json.loads(r.read().decode())
+        except Exception as e:
+            last_error=e
+            if attempt==0: time.sleep(0.18)
+    LAST["endpoint"]=label
+    LAST["error"]=f"{label}: {type(last_error).__name__}: {last_error}"
+    raise last_error
 
 class Store:
     def __init__(self):
@@ -2654,9 +2658,10 @@ class H(SimpleHTTPRequestHandler):
     def end_headers(self):
         p=urlparse(self.path).path
         if not p.startswith("/api/"):
-            self.send_header("Cache-Control","no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma","no-cache")
-            self.send_header("Expires","0")
+            if re.search(r"\\.(?:css|js|png|jpg|jpeg|webp|svg|ico|woff2?)$",p,re.I):
+                self.send_header("Cache-Control","public, max-age=3600, stale-while-revalidate=86400")
+            else:
+                self.send_header("Cache-Control","no-cache, max-age=0, must-revalidate")
             self.send_header("X-ATLAS-Build",VERSION)
         self.send_header("X-Content-Type-Options","nosniff")
         self.send_header("Referrer-Policy","no-referrer")
@@ -2664,7 +2669,12 @@ class H(SimpleHTTPRequestHandler):
         self.send_header("X-Frame-Options","SAMEORIGIN")
         super().end_headers()
     def sendj(self,o,status=200):
-        b=json.dumps(o).encode();self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store");self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
+        b=json.dumps(o,separators=(",",":")).encode()
+        use_gzip=len(b)>1400 and "gzip" in str(self.headers.get("Accept-Encoding","")).lower()
+        if use_gzip:b=gzip.compress(b,compresslevel=5)
+        self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store")
+        if use_gzip:self.send_header("Content-Encoding","gzip");self.send_header("Vary","Accept-Encoding")
+        self.send_header("Content-Length",str(len(b)));self.end_headers();self.wfile.write(b)
     def do_POST(self):
         u=urlparse(self.path)
         if u.path not in ("/api/ai/ask","/api/mlb/ai/ask"):return self.sendj({"ok":False,"error":"Not found"},404)
@@ -2945,6 +2955,9 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e:return self.sendj({"ok":False,"team":str(team).upper(),"stats":[],"error":str(e)},502)
         if u.path=="/api/teams":return self.sendj({"teams":team_index()})
         if u.path=="/api/league":return self.sendj(league_hq())
+        if u.path=="/api/runtime":
+            cs=LAST.get("collector_stats") or {}
+            return self.sendj({"ok":True,"version":VERSION,"server_ready":LAST.get("server_ready"),"database":STORE.kind,"collector":{"last_run":LAST.get("collector"),"live":cs.get("live",0),"attempted":cs.get("attempted",0),"succeeded":cs.get("succeeded",0),"failed":cs.get("failed",0)},"ai_configured":bool(GEMINI_API_KEY),"last_error":LAST.get("error")})
         if u.path=="/api/health":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"database":STORE.kind,"provider":PROVIDER,"collector_seconds":COLLECT_SECONDS,"last":LAST})
         if u.path=="/api/build":return self.sendj({"ok":True,"version":VERSION,"build":BUILD_NAME,"js":"nfl/atlas766.js","css":"nfl/atlas766.css","database":STORE.kind,"ai":atlas_ai_status()})
         if u.path=="/api/sources":return self.sendj(source_health((q.get("force") or ["0"])[0]=="1"))

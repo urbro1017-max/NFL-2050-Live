@@ -1,0 +1,11 @@
+
+/* ATLAS 8.9 shared refinement */
+:root{--atlas89-line:rgba(255,255,255,.07)}
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+main{padding-bottom:40px}
+.card,.panel{overflow:clip}
+.card header h2,.panel header h2{line-height:1.1}
+img{loading:auto}
+button,input,select{min-height:34px}
+table{font-variant-numeric:tabular-nums}
+@media(max-width:700px){main{padding-bottom:72px}.card,.panel{margin-bottom:8px}}

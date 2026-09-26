@@ -1,4 +1,4 @@
-# ATLAS 76.6 — Refined Visual Intelligence
+# ATLAS 9.0 — Official
 
 A visual overhaul built on the working ATLAS 67.1 data pipeline.
 

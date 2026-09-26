@@ -1,0 +1,11 @@
+
+/* ATLAS 9.0 official shared system */
+:root{--official-font:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+html{background:#080809}body{font-family:var(--official-font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button,a,input,select{font:inherit}button{cursor:pointer}
+h1,h2,h3{font-weight:740;letter-spacing:-.035em}
+.card,.panel{border-width:1px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+img{object-fit:contain}
+:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}

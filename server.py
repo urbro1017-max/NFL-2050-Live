@@ -10,6 +10,23 @@ from pathlib import Path
 from html.parser import HTMLParser
 from html import unescape
 PROVIDER_FAILURES={}
+API_RESPONSE_CACHE={}
+API_RESPONSE_TTLS={
+    "/api/teams":300,
+    "/api/projections":45,
+    "/api/ai/status":15,
+    "/api/build":60,
+    "/api/runtime":5,
+}
+def api_cache_get(path):
+    x=API_RESPONSE_CACHE.get(path)
+    if not x:return None
+    if time.time()-x["t"]>API_RESPONSE_TTLS.get(path,0):
+        API_RESPONSE_CACHE.pop(path,None);return None
+    return x["v"]
+def api_cache_put(path,value):
+    if path in API_RESPONSE_TTLS:API_RESPONSE_CACHE[path]={"t":time.time(),"v":value}
+
 def provider_allowed(label):
     x=PROVIDER_FAILURES.get(label)
     return not x or x.get("until",0)<=time.time()
@@ -24,8 +41,8 @@ HOST="0.0.0.0"; PORT=int(os.environ.get("PORT","10000")); ROOT=Path(__file__).pa
 DEFAULT_GAME_ID=os.environ.get("DEFAULT_GAME_ID","401872932")
 DATABASE_URL=os.environ.get("DATABASE_URL","")
 COLLECT_SECONDS=max(15,int(os.environ.get("COLLECT_SECONDS","30")))
-VERSION="ATLAS-PWA-8.7-POLISHED"
-BUILD_NAME="ATLAS 8.7 POLISHED"
+VERSION="ATLAS-PWA-9.0-OFFICIAL"
+BUILD_NAME="ATLAS 9.0 OFFICIAL"
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY","").strip()
 GEMINI_MODEL=os.environ.get("GEMINI_MODEL","gemini-3.5-flash").strip()
 OPENAI_TIMEOUT=max(5,int(os.environ.get("OPENAI_TIMEOUT","25")))
@@ -2684,8 +2701,17 @@ class H(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")
         self.send_header("X-Frame-Options","SAMEORIGIN")
         super().end_headers()
+    def end_headers(self):
+        self.send_header("X-ATLAS-Version",VERSION)
+        self.send_header("X-Content-Type-Options","nosniff")
+        self.send_header("Referrer-Policy","same-origin")
+        self.send_header("X-Frame-Options","SAMEORIGIN")
+        self.send_header("Permissions-Policy","camera=(), microphone=(), geolocation=()")
+        super().end_headers()
+
     def sendj(self,o,status=200):
-        b=json.dumps(o,separators=(",",":")).encode()
+        try:b=json.dumps(o,separators=(",",":"),ensure_ascii=False).encode()
+        except (TypeError,ValueError):b=json.dumps({"ok":False,"error":"Response serialization failed."},separators=(",",":")).encode();status=500
         use_gzip=len(b)>1400 and "gzip" in str(self.headers.get("Accept-Encoding","")).lower()
         if use_gzip:b=gzip.compress(b,compresslevel=5)
         self.send_response(status);self.send_header("Content-Type","application/json");self.send_header("Cache-Control","no-store")

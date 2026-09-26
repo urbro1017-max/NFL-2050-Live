@@ -1,4 +1,4 @@
-# ATLAS 9.0 — Official
+# ATLAS 9.1 — Theme Studio
 
 A visual overhaul built on the working ATLAS 67.1 data pipeline.
 

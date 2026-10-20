@@ -25,3 +25,11 @@ This is a functional **front-end prototype**. Game scores, stat leaders, fantasy
 - Build a data ingestion and caching pipeline, then populate real scores, rosters, statistics, and injuries.
 - Implement and backtest a documented CFI formula on historical weekly fantasy results.
 - Add accounts, saved favorites, news content, team/player detail pages, and advanced comparisons.
+
+## Fix for "no requirements.txt" on Render
+
+That error means Render tried to deploy this JavaScript project as a **Python** web service. This project does not use Python and does not need `requirements.txt`.
+
+**Recommended:** In Render, select **New > Static Site**, connect your GitHub repo, use build command `npm install && npm run build` and publish directory `dist`. If Render created a Python Web Service, create a new Static Site instead; changing a Python service's build command alone may not fix its runtime.
+
+**Alternative:** Deploy using **New > Blueprint** with the included `render.yaml` in the repository root. This configures the correct static runtime automatically.

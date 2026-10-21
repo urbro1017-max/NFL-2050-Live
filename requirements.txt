@@ -1,0 +1,4 @@
+# CAM'S STATS is a React/Vite (Node.js) static website.
+# No Python dependencies are required.
+# If Render requests this file, the existing service is configured as Python.
+# Create a Render Static Site (or Blueprint from render.yaml) instead.

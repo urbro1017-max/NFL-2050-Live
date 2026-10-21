@@ -1,35 +1,25 @@
-# CAM'S STATS
+# CAM'S STATS V6.0
 
-An original ESPN-inspired NFL + NBA website prototype with independent fantasy football rankings, player comparisons, league pages, and responsive design. Built with React and Vite.
+NFL + NBA sports desk, ESPN-style presentation, and interactive analytical tools.
 
-## Run locally
+## Features
+- NFL and NBA scoreboard and news feeds (third-party ESPN endpoints; may be blocked or unavailable)
+- Fantasy rankings with scoring filters (DEMO ONLY; not real projections)
+- NFL/NBA Pro Lab with searchable sample players and comparison charts
+- Scenario-based NFL/NBA game predictor (user-adjustable, not a trained forecast)
+- GM Center with custom roster cap hits, cap-space tracking, and trade calculator
+- CAM Analyst offline rules-based Q&A (NOT connected to an LLM)
 
-1. Install Node.js 20+.
-2. Run `npm install`.
-3. Run `npm run dev` and open the local URL shown.
+## Deploy on existing Render Web Service
+Build command: `npm install && npm run build`
+Start command: `npx vite preview --host 0.0.0.0 --port $PORT`
+Set preview.allowedHosts in vite.config.js for your domain. Static Site is preferred: publish `dist` and use no start command.
 
-## Deploy to Render
+## Local
+`npm install` then `npm run dev`.
 
-Create a **Static Site** from this GitHub repository:
-- Build command: `npm install && npm run build`
-- Publish directory: `dist`
-- Add a rewrite rule `/*` → `/index.html` (status 200) if needed for client-side routing.
+## Data transparency
+Fantasy rankings, statistical leaders, Pro Lab figures, and projections are sample/demo values. GM contracts and cap limits are manually entered, not official salary data. The predictions page uses a simple what-if calculation and has not been trained or backtested. CAM Analyst uses fixed responses and does not call an AI API. Live score/news calls are attempted directly from the browser and may fail due to CORS or provider changes. Do not use model outputs for wagering or real-world financial decisions.
 
-## Important: data status
-
-This is a functional **front-end prototype**. Game scores, stat leaders, fantasy ratings, and projections are **illustrative demo data**, clearly labeled in the UI. They are not live, historical, or reliable fantasy recommendations. The app does not yet use a sports API or server. Player rankings use an illustrative CFI scale; scoring mode changes demonstration point projections.
-
-## Next development steps
-
-- Connect a licensed NFL/NBA data provider with an authenticated server-side proxy; never embed private API keys in the browser.
-- Build a data ingestion and caching pipeline, then populate real scores, rosters, statistics, and injuries.
-- Implement and backtest a documented CFI formula on historical weekly fantasy results.
-- Add accounts, saved favorites, news content, team/player detail pages, and advanced comparisons.
-
-## Fix for "no requirements.txt" on Render
-
-That error means Render tried to deploy this JavaScript project as a **Python** web service. This project does not use Python and does not need `requirements.txt`.
-
-**Recommended:** In Render, select **New > Static Site**, connect your GitHub repo, use build command `npm install && npm run build` and publish directory `dist`. If Render created a Python Web Service, create a new Static Site instead; changing a Python service's build command alone may not fix its runtime.
-
-**Alternative:** Deploy using **New > Blueprint** with the included `render.yaml` in the repository root. This configures the correct static runtime automatically.
+## Real player data (new)
+The **Real Stats** navigation page fetches current NFL and NBA team rosters and season player statistics directly from ESPN's public, undocumented endpoints. Choose league, team, player, and season. It displays only returned fields and an error if unavailable. This is a live-data integration, not a cached or validated database; CORS and endpoint changes may affect it. Other fantasy rankings, predictions, GM contracts and example leaders remain illustrative. A production-quality CAM fantasy rating requires verified weekly game logs and testing before replacing the examples.

@@ -1,6 +1,6 @@
 import React,{useEffect,useState} from 'react';
-const BASE='https://site.api.espn.com/apis/site/v2/sports';
-const WEB='https://site.web.api.espn.com/apis/common/v3/sports';
+const BASE='/api/espn/site/apis/site/v2/sports';
+const WEB='/api/espn/web/apis/common/v3/sports';
 const PATH={NFL:'football/nfl',NBA:'basketball/nba'};
 async function json(url){const r=await fetch(url,{signal:AbortSignal.timeout(16000)});if(!r.ok)throw Error(`Data provider returned ${r.status}`);return r.json()}
 function rosterPlayers(payload){const groups=payload.athletes||[];return groups.flatMap(g=>Array.isArray(g.items)?g.items:Array.isArray(g.athletes)?g.athletes:(g.id?[g]:[])).filter(x=>x.id).map(x=>({id:x.id,name:x.displayName||x.fullName||x.name,position:x.position?.abbreviation||'',headshot:x.headshot?.href||x.headshot?.url}));}
